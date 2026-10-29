@@ -1,0 +1,26 @@
+{
+  "name": "vinny-parallax-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node scripts/check-camera-browser.mjs",
+    "normalize:layers": "python3 scripts/normalize-layers.py",
+    "render:frames": "node scripts/render-frames.mjs",
+    "lab:basic": "node scripts/render-camera-lab-basic.mjs",
+    "lab:basic-encode": "node scripts/export-camera-lab-basic.mjs",
+    "export:video": "node scripts/export-video.mjs"
+  },
+  "dependencies": {
+    "pixi.js": "^8.22.0"
+  },
+  "devDependencies": {
+    "typescript": "~7.0.2",
+    "vite": "^8.3.5",
+    "playwright": "^1.58.0"
+  }
+}

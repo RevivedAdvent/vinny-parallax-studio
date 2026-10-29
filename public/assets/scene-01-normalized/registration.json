@@ -1,0 +1,92 @@
+{
+  "sourceArtboard": [
+    1363,
+    768
+  ],
+  "outputArtboard": [
+    1920,
+    1080
+  ],
+  "method": "registered RGBA composite, then Lanczos resize; no inpainting",
+  "layers": [
+    {
+      "file": "background.png",
+      "nativeSize": [
+        1363,
+        768
+      ],
+      "offset": [
+        0,
+        0
+      ],
+      "alphaRepair": {
+        "operation": "make existing backplate RGB opaque; no RGB edits",
+        "priorAlphaRange": [
+          239,
+          255
+        ],
+        "affectedPixels": 355095,
+        "rgbSHA256Before": "b3aee1a039a5a8f52ee98d1f3d052fd743de7b460e7f75bb92526f74e70584d8",
+        "rgbSHA256After": "b3aee1a039a5a8f52ee98d1f3d052fd743de7b460e7f75bb92526f74e70584d8"
+      },
+      "sourceSHA256": "f421f9040537d3d43939115fb370077f32574250a49d0fb2b4f95d35755d463b",
+      "normalizedSHA256": "8b12cabd1982fafe754ad4ad5668b7906deb95f16dbb07ba8cf8af8af91d4976"
+    },
+    {
+      "file": "jungle.png",
+      "nativeSize": [
+        1363,
+        741
+      ],
+      "offset": [
+        0,
+        0
+      ],
+      "alphaRepair": null,
+      "sourceSHA256": "20ff3222be96aa3a8a43b883d60927bd7ff815200666c4065f2dd20048e7e3d5",
+      "normalizedSHA256": "d41c7064701718bddf83957c675e6f18705a9e845f598f163e500c2092554a31"
+    },
+    {
+      "file": "vinny.png",
+      "nativeSize": [
+        956,
+        547
+      ],
+      "offset": [
+        68,
+        185
+      ],
+      "alphaRepair": null,
+      "sourceSHA256": "c921d23b4fa5c868d23239caf16aca66b01e0aff37f0f181086878c21f04f299",
+      "normalizedSHA256": "20da340c9a5376b0b32ce64834090dcc7020e5acf3f1a197af904be2b86bcf65"
+    },
+    {
+      "file": "foreground.png",
+      "nativeSize": [
+        1363,
+        768
+      ],
+      "offset": [
+        0,
+        0
+      ],
+      "alphaRepair": null,
+      "sourceSHA256": "fa3e34a1f2d6b75b247ef62398e20f8dcb5da25f61cc453654695fa658f1a021",
+      "normalizedSHA256": "b1e0f5b6acc2e1aecc0265b42935e46bcb50477bfb9dde6c266ce3771de66c82"
+    },
+    {
+      "file": "reference.png",
+      "nativeSize": [
+        1363,
+        768
+      ],
+      "offset": [
+        0,
+        0
+      ],
+      "alphaRepair": null,
+      "sourceSHA256": "ece7647e783aa7dcea8bd6456fbefa79279aac33bd9a6ae246f4cbf0d792a095",
+      "normalizedSHA256": "83b71f1784e5c1b999c12c0ef9611e6ca73f0e49975c7beeb15c0e00db3a6b32"
+    }
+  ]
+}

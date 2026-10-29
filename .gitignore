@@ -1,0 +1,17 @@
+node_modules/
+dist/
+output/*
+!output/.gitkeep
+!output/camera-phase1/
+output/camera-phase1/*
+!output/camera-phase1/README.md
+!output/camera-phase1/camera-core.json
+*.log
+*.pid
+__pycache__/
+*.py[cod]
+Thumbs.db
+.DS_Store
+.env
+.env.*
+!.env.example

@@ -1,0 +1,25 @@
+import type { CameraSceneConfig } from '../camera/types.ts';
+
+/** Phase 1 core proof only. Not a preset catalog or the Phase 3 hero edit. */
+export const CAMERA_PROOF: CameraSceneConfig = {
+  version: 1, id: 'vinny-camera-core-proof', width: 1920, height: 1080, fps: 24, totalFrames: 576,
+  layers: [
+    { id: 'background', name: 'Distant valley', asset: '/assets/scene-01-normalized/background.png', depth: 0.1 },
+    { id: 'jungle', name: 'Jungle canopy', asset: '/assets/scene-01-normalized/jungle.png', depth: 0.4 },
+    { id: 'vinny', name: 'Count Vinny', asset: '/assets/scene-01-normalized/vinny.png', depth: 0.6 },
+    { id: 'foreground', name: 'Foreground ferns', asset: '/assets/scene-01-normalized/foreground.png', depth: 1 },
+  ],
+  camera: {
+    baseZoom: 1.15, anchor: { x: 960, y: 540 },
+    limits: { x: { min: -80, max: 80 }, y: { min: -45, max: 45 },
+      zoom: { min: 0.9, max: 1.18 }, roll: { min: -3, max: 3 } },
+  },
+  tracks: [
+    { id: 'core-depth-push', target: 'camera', property: 'zoom', startFrame: 24, endFrame: 503,
+      startValue: 1, endValue: 1.06, easing: 'ease_in_out', intensity: 1,
+      limits: { min: 1, max: 1.08 }, projection: 'dolly', holdAfter: true },
+    { id: 'core-translation', target: 'camera', property: 'x', startFrame: 24, endFrame: 503,
+      startValue: 0, endValue: 16, easing: 'ease_in_out', intensity: 1,
+      limits: { min: -24, max: 24 }, holdAfter: true },
+  ],
+};
