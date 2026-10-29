@@ -23,10 +23,20 @@ export interface Layer {
   name: string;
   asset: string;
   depth: number;
+  order?: number;
+  x?: number;
+  y?: number;
+  scale?: number;
+  rotation?: number;
+  opacity?: number;
+  visible?: boolean;
+  width?: number;
+  height?: number;
 }
 export interface CameraSceneConfig {
   version: 1;
   id: string;
+  title?: string;
   width: number;
   height: number;
   fps: number;
@@ -34,6 +44,8 @@ export interface CameraSceneConfig {
   layers: Layer[];
   camera: {
     baseZoom: number;
+    /** Maximum absolute roll permitted by validation; defaults to 3 degrees for version-1 camera proofs. */
+    maxRoll?: number;
     /** Output-space point about which push/zoom and roll are framed. */
     anchor: { x: number; y: number };
     limits: Record<Property, Limits>;

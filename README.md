@@ -1,123 +1,74 @@
-# Vinny — A world before his time
+# StoryStudio — illustrated story animation
 
-A complete **PixiJS 8 + TypeScript + Vite** project that turns the supplied layered artwork into a 24-second 2.5D story scene. No backend or API keys required.
+StoryStudio is a local, beginner-oriented 2.5D editor for arranging illustrated artwork and animating a camera and layers. It uses TypeScript, Vite, PixiJS 8 and the existing frame-indexed camera evaluator. No account or backend is needed.
 
-## Start the studio
+## Start
 
-```bash
-cd /home/sriharsham/vinny-parallax-studio
+Requires Node.js 22.18 or newer, npm and a browser with WebGL enabled.
+
+```powershell
+cd E:\vinny-parallax-studio
 npm install
 npm run dev
 ```
 
-Open the localhost URL printed by Vite (normally `http://127.0.0.1:5173`). Playback starts paused with sound off. Click Play or press Space. Arrow keys step one second when a form control is not focused. Click a story beat or drag the timeline to seek.
+Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The project is a Git working tree; changes are local and uncommitted.
 
-**Requirements:** Node.js 22.18+ (Node 22.23 tested), npm, and a browser with WebGL enabled. Dependencies are already installed on this machine. No remote fonts or runtime services are required once dependencies are installed.
+## Create a story
 
-## What is animated
+1. Choose **New project**, enter a title such as `My New Story`, and choose **Save**. A new project starts with one blank scene; it does not inherit the example artwork or animation.
+2. Use **＋** beside Scenes to add a scene. Select a scene in the left navigator; use Scene properties to change its title, duration in seconds, and frame rate. The arrow buttons reorder scenes and **Duplicate** makes an independent scene copy. Deleting a scene asks for confirmation.
+3. Choose **Import artwork** and select PNG, JPEG or WebP files. Multiple images can be imported together. Full-canvas transparent artwork and smaller cutouts are both supported. The layer list is shown front-to-back; use Bring forward / Send back, the visibility checkbox, duplicate, and delete controls. Double-click a layer name to rename it.
+4. Select a layer and adjust X, Y, scale, rotation, opacity and depth in Properties. The thumbnail shows the selected image. An imported image starts centered, at its native size. Position and scale it to fit your composition.
+5. Move the playhead. Choose an animation property and easing, then click **＋ Camera keyframe** or **＋ Animate selected layer**. Click a diamond on the timeline to edit the track's start/end frames, values, easing and intensity, or delete it. Zoom/scale values are multipliers (1 is neutral); X/Y values are pixels; rotation is degrees. Positive camera movement shifts artwork in the opposite direction, weighted by depth. Layer motion moves only that layer. Tracks are additive, so multiple tracks on a property combine.
+6. Use Play/Pause, Restart and the scrubber to inspect individual integer frames. Click **Export frame PNG** to save a still with transparency intact. The preview can skip displayed frames on slow hardware; frame evaluation is deterministic.
 
-- Four original image layers with independently weighted parallax.
-- Slow eased camera push and lateral drift, with overscan to protect image edges.
-- Restrained whole-cutout breathing on Vinny, and foreground fern sway.
-- Seeded floating particles, soft drifting mist, vignette, opening and closing fades.
-- Four timed captions adapted from the supplied PDF.
-- Optional synthesized waterfall-like ambience for preview, off by default.
+**Open Vinny example** creates a separate project from the existing normalized artwork and camera-proof tracks. It is an example rather than a template for new projects. The older effects/captions preview is still available at `/legacy.html` on the development server; it is a separate historical implementation, not the new project renderer.
 
-This is **cutout animation**, not a rigged character or generated 3D scene. It does not invent new artwork, facial animation, or dinosaur action. The distant waterfalls remain part of the painted background.
+## Saving and transfer
 
-## Story interpretation
+**Save** stores the entire project, including imported artwork, in the browser's IndexedDB. Projects are also saved before switching to a different project, creating a project, or importing a package. Browser data can be cleared by the user or browser; use **Transfer project** for backups. The downloaded `.story.json` contains the versioned manifest and embedded image data, including the example's assets. **Open** imports such a package as a new copy, leaving the original saved project intact. Large images make large packages and may exceed browser storage limits. Project duplication and confirmed deletion are available in the navigator.
 
-The PDF begins at Vinny's castle; the supplied artwork instead depicts his **arrival in the prehistoric jungle**, after the time-crystal jump. This project treats that as the **first illustrated scene**, not a literal adaptation of the PDF's opening paragraphs. It begins at “Then silence. Vinny landed face-first in a fern.” The third caption condenses the jungle description; the final quote retains his Jurassic Park joke.
+## Frame-accurate scene MP4
 
-The complete original PDF and extracted text are in `docs/`. Source files in Downloads and existing animation projects were not modified.
+1. Select the scene and choose **Master export config**. The downloaded `.camera.json` contains that scene's settings, tracks and embedded assets, including unsaved edits.
+2. Install Playwright Chromium once: `npx playwright install chromium`. Install FFmpeg and FFprobe, with libx264 or libopenh264, and put them on PATH; alternatively set `FFMPEG_PATH` and `FFPROBE_PATH` to their executables. On this machine the separately downloaded tools can be used with:
 
-## Video and image export
+   ```powershell
+   $env:FFMPEG_PATH = 'E:\story-tools\ffmpeg-9.0.2-essentials_build\bin\ffmpeg.exe'
+   $env:FFPROBE_PATH = 'E:\story-tools\ffmpeg-9.0.2-essentials_build\bin\ffprobe.exe'
+   ```
 
-### Finished MP4
+3. Run the existing numbered-PNG / FFmpeg master exporter, supplying the downloaded config and a **new** output name:
 
-The first rendered video is saved at:
+   ```powershell
+   npm run export:video -- output/my-scene.mp4 --config "$env:USERPROFILE\Downloads\Scene-1.camera.json"
+   ```
 
-```text
-output/vinny-scene-01.mp4
-```
+The exporter starts its own Vite server and Chromium, renders each frame through the same scene renderer and evaluator as the editor, then encodes and verifies H.264 dimensions, rate, duration and frame count. It refuses to overwrite an existing output or partial output. Rendering can take a long time and needs disk space for numbered PNGs. No audio is included. This is **not** a real-time screen recording.
 
-It is 1920 × 1080, 24 fps, 24 seconds, H.264, with a silent soundtrack. A browser-exported WebM and preview screenshots are also in `output/`.
+The master exporter currently requires an opaque composition covering the entire frame on **every** frame. It reports the first uncovered frame and stops instead of hiding gaps. Add an opaque background with sufficient overscan, or reduce camera motion. In contrast, still PNG export supports transparency. Complete-story export and transitions are not implemented; export scenes individually. With no `--config`, the legacy CLI default is the original camera proof.
 
-### Render a new MP4 (frame-perfect)
+## Format and coordinates
 
-```bash
-# Once per fresh machine; Chromium is already installed here:
+`src/studio/project.ts` defines the versioned project, metadata, defaults, and scene collection. `src/camera/types.ts` defines scene, layer and track data; `src/camera/validate.ts` validates renderer inputs. A project package includes a manifest and image data URLs, not temporary blob URLs. Unsupported project versions are rejected; no migrations beyond version 1 exist yet.
+
+Composition coordinates are pixels, origin top-left, +X right and +Y down. Each image is centered at the composition center plus its X/Y offsets; its own pixel dimensions are preserved. Camera framing and roll are applied around the shared camera anchor. Layer scale is a positive multiplier, layer rotation is degrees, opacity is 0–1 and depth is 0–1. Higher depth has more camera translation and dolly response. Array/order values define back-to-front stacking, independently of depth. Layer and scene IDs are stable and independent of their display names. Frame indices start at zero; track boundaries are inclusive and a track holds its end value by default.
+
+`src/camera/evaluate.ts` and `project.ts` perform pure frame-indexed evaluation and projection; `src/engine/camera-scene.ts` loads assets and applies poses in Pixi. `src/main.ts` handles editor state, local persistence and package transfer. The renderer does not import a particular story. The supplied originals and normalization script remain unchanged. The documents under `docs/` describe earlier phases and are historical; use this README for the current interface.
+
+## Tests
+
+```powershell
+npm test
 npx playwright install chromium
-# System ffmpeg with libx264 or libopenh264 must be available on PATH.
-npm run export:video -- output/my-scene.mp4
+npm run test:browser
+npm run build
+npm run test:export      # needs FFmpeg and FFprobe as above
 ```
 
-The exporter starts its own local Vite server and Chromium, evaluates exactly 576 frames through the same Pixi renderer as the preview, and pipes them to FFmpeg. There is no screen recording or real-time frame-dropping. It closes its browser and server automatically. Software rendering can take several minutes. The exporter selects libx264 when present, otherwise libopenh264 (used on this machine). Set FFMPEG_PATH to use another FFmpeg executable. Existing filenames are protected against overwriting; choose a new name for each render.
+The browser test exercises multiple scenes, image imports, property/track editing, deterministic pixels, local save/reload, package import and a frame export of the example. The export test creates a short synthetic MP4 and checks overwrite protection. Prior camera proof and legacy tests/scripts are retained.
 
-The CLI uses the scene's default settings, not unsaved adjustments in an already-open browser. Edit `src/engine/scene.ts` to change defaults and `src/scenes/arrival.ts` to change timing/captions. Outputs are ignored by Git.
+## Current limitations
 
-### Browser WebM
-
-Click **Export scene**. It records the currently enabled layers, camera amount, atmosphere, and captions, in real time. Keep the tab visible for the full 24 seconds. This is a convenient silent preview download; browser capture is variable-frame-rate and can shorten or drop frames, especially under software rendering. Use the CLI for an exact 24-second, frame-perfect MP4. Synthesized preview ambience is deliberately not included in either video export.
-
-### Still image
-
-Scrub to a frame and click **Save still** for a 1920 × 1080 PNG. It saves the animated composition even when original-art comparison is visible. UI controls are never burned into video or still exports.
-
-## Project structure
-
-```text
-vinny-parallax-studio/
-├── public/assets/scene-01/    # Original layers and reference composition
-├── src/
-│   ├── main.ts               # Studio UI, transport, browser downloads
-│   ├── style.css             # Responsive studio design
-│   ├── scenes/arrival.ts     # Layer positions, captions, beats, duration
-│   └── engine/
-│       ├── scene.ts          # Pixi scene and deterministic renderAt(seconds)
-│       ├── math.ts           # Easing, envelopes, seeded random
-│       └── ambience.ts       # Optional Web Audio preview ambience
-├── scripts/
-│   ├── runtime.mjs           # Self-contained test/export browser + server
-│   ├── export-video.mjs      # Offline H.264 MP4 renderer
-│   └── check-browser.mjs     # Real Chromium interaction and export checks
-├── tests/scene.test.mjs      # Timing, alignment, assets and math tests
-├── docs/                     # Source story, storyboard, implementation notes
-└── output/                   # Video, stills and verification screenshots
-```
-
-## Layer registration
-
-The original artboard is **1363 × 768**. RGB matching against the flattened reference establishes these offsets; do not center each cropped PNG independently.
-
-| Order | File | Image size | Artboard position | Depth |
-|---|---|---|---|---|
-| 1 | background.png | 1363 × 768 | 0, 0 | 0.08 |
-| 2 | jungle.png | 1363 × 741 | 0, 0 | 0.45 |
-| 3 | vinny.png | 956 × 547 | **68, 185** | 0.68 |
-| 4 | foreground.png | 1363 × 768 | 0, 0 | 1.00 |
-
-The topmost full-size foliage layer closes the small lower gap in the cropped jungle layer. The renderer intentionally adds 6.5% minimum overscan for camera motion, so the animation is a slightly tighter crop than the supplied reference. The 1363:768 source is scaled very slightly nonuniformly to exact 16:9 output (under 0.2% difference).
-
-## Validate and ship
-
-```bash
-npm test                # 5 unit/scene-data tests
-npm run test:browser    # Chromium, interactions, responsive layout, PNG + 24s WebM download
-npm run build           # Strict TypeScript and production Vite bundle
-npm run preview         # Serve the built dist/ directory locally
-```
-
-Deploy `dist/` to a static site host at its root. For subpath hosting, configure Vite's base and adjust the root-relative asset URLs first.
-
-## Next scene
-
-Add separate character, dinosaur, background and foreground cutouts for the Therizinosaurus encounter. Create a new scene descriptor in `src/scenes/`, then add a scene selector and a second motion choreography. The current renderer is deterministic and already suitable for joining multiple rendered scene clips in FFmpeg.
-
-## Sources
-
-- User-supplied `Story.pdf` and `Downloads/Page 1/*.png` — all narrative and scene artwork.
-- [PixiJS v8 documentation](https://pixijs.com/8.x/guides/getting-started/quick-start) — async initialization and renderer API.
-- [PixiJS source and migration notes](https://github.com/pixijs/pixijs/blob/dev/src/__docs__/migrations/v8.md).
-
-The story's original author/title are not identified in the PDF; “A world before his time” is a working scene title. Rights to supplied artwork/story remain with their owners.
+The timeline is a basic track inspector rather than a full multi-keyframe editor. It supports camera and layer X/Y, zoom/scale and rotation; opacity is static, not animated. Camera dolly is preserved for imported/example tracks but cannot yet be selected for newly created tracks in the UI. Captions, atmospheric effects, sound, project resolution/default editing, real-time WebM, a complete-story video and transitions are not yet implemented in the new editor. Asset importing is direct-to-layer rather than a reusable asset library. The MP4 CLI currently rejects uncovered/transparent frames. The historical `legacy.html` retains the earlier story-specific effects but is not a portable project editor.

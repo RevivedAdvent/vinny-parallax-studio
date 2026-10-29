@@ -1,4 +1,4 @@
-import './style.css';
+import './legacy.css';
 import { createScene, type StoryScene } from './engine/scene';
 import { Ambience } from './engine/ambience';
 import { SCENE, CHAPTERS } from './scenes/arrival';

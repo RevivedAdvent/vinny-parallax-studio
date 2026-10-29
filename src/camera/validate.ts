@@ -23,23 +23,30 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
   if (config.version !== 1 || typeof config.id !== 'string' || !config.id.trim()) throw new Error('Invalid camera scene identity/version');
   integer(config.width, 1, 8192, 'width'); integer(config.height, 1, 8192, 'height');
   integer(config.fps, 1, 120, 'fps'); integer(config.totalFrames, 1, 100000, 'totalFrames');
-  if (!config.camera || !Array.isArray(config.layers) || !config.layers.length || !Array.isArray(config.tracks)) throw new Error('Camera, layers and tracks are required');
+  if (!config.camera || !Array.isArray(config.layers) || !Array.isArray(config.tracks)) throw new Error('Camera, layers and tracks are required');
   config.camera.baseZoom = clamp(finite(config.camera.baseZoom, 'baseZoom'), 1, 2);
   config.camera.anchor.x = clamp(finite(config.camera.anchor.x, 'anchor.x'), 0, config.width);
   config.camera.anchor.y = clamp(finite(config.camera.anchor.y, 'anchor.y'), 0, config.height);
+  const maxRoll = config.camera.maxRoll === undefined ? 3 : finite(config.camera.maxRoll, 'camera.maxRoll');
+  if (maxRoll < 0 || maxRoll > 180) throw new Error('camera.maxRoll must be 0..180');
   for (const p of properties) {
-    const hard = p === 'x' ? { min: -config.width, max: config.width } : p === 'y' ? { min: -config.height, max: config.height } : hardLimits[p];
+    const hard = p === 'x' ? { min: -config.width, max: config.width } : p === 'y' ? { min: -config.height, max: config.height } : p === 'roll' ? { min: -maxRoll, max: maxRoll } : hardLimits[p];
     config.camera.limits[p] = limits(config.camera.limits[p], `camera.${p}`, hard);
     const neutral = p === 'zoom' ? 1 : 0;
     if (config.camera.limits[p].min > neutral || config.camera.limits[p].max < neutral) throw new Error(`camera.${p} limits must include neutral ${neutral}`);
   }
   const ids = new Set<string>();
-  for (const layer of config.layers) {
+  for (const [index, layer] of config.layers.entries()) {
     if (!layer.id || ids.has(layer.id)) throw new Error('Layer ids must be nonempty and unique');
     ids.add(layer.id);
     if (!layer.name || typeof layer.asset !== 'string' || !layer.asset) throw new Error(`Invalid layer ${layer.id}`);
     layer.depth = clamp(finite(layer.depth, `${layer.id}.depth`), 0, 1);
+    layer.order ??= index; layer.x ??= 0; layer.y ??= 0; layer.scale ??= 1;
+    layer.rotation ??= 0; layer.opacity ??= 1; layer.visible ??= true;
+    for (const field of ['x','y','scale','rotation','opacity'] as const) finite(layer[field]!, `${layer.id}.${field}`);
+    if (layer.scale! <= 0 || layer.opacity! < 0 || layer.opacity! > 1) throw new Error(`Invalid transform on ${layer.id}`);
   }
+  config.layers.sort((a,b) => a.order! - b.order!);
   const tracks = new Set<string>();
   for (const track of config.tracks) {
     if (!track.id || tracks.has(track.id)) throw new Error('Track ids must be nonempty and unique');

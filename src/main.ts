@@ -1,185 +1,53 @@
 import './style.css';
 import { createCameraScene, type CameraScene } from './engine/camera-scene.ts';
-import { CAMERA_PROOF } from './scenes/camera-proof.ts';
-import type { CameraSceneConfig } from './camera/types.ts';
+import { createProject, createScene, exampleProject, validateProject, type StoryProject } from './studio/project.ts';
+import type { CameraSceneConfig, Track, Property, Easing } from './camera/types.ts';
 
-declare global {
-  interface Window { __CAMERA_INPUT__?: { config: CameraSceneConfig; intensity?: number }; cameraStudio: ReturnType<typeof api> }
-}
-const params = new URLSearchParams(location.search), renderMode = params.has('render');
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const root = document.querySelector<HTMLDivElement>('#app')!;
-const icon = (name: string) => ({ play: '▶', pause: 'Ⅱ', replay: '↺', full: '⛶', save: '↓' })[name] ?? name;
-let scene: CameraScene, config = CAMERA_PROOF, frame = 0, playing = false, recording = false;
-let playOrigin = 0, originFrame = 0, toastTimer = 0;
-function timecode(f: number) {
-  const seconds = Math.floor(f / config.fps);
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(f % config.fps).padStart(2, '0')}`;
-}
-function toast(text: string) {
-  if (renderMode) return;
-  $('toast').textContent = text; $('toast').classList.add('visible');
-  clearTimeout(toastTimer); toastTimer = window.setTimeout(() => $('toast').classList.remove('visible'), 6000);
-}
-function updateUI() {
-  if (renderMode) return;
-  $<HTMLInputElement>('scrub').value = String(frame);
-  $('current').textContent = timecode(frame);
-  $('duration-label').textContent = ` / ${timecode(config.totalFrames - 1)}`;
-  $('format-label').textContent = `${config.width} × ${config.height} · ${config.fps} FPS`;
-  $<HTMLInputElement>('scrub').max = String(config.totalFrames - 1);
-  const amount = scene.getState().intensity;
-  $<HTMLInputElement>('motion').value = String(Math.round(amount * 100));
-  $('motion-value').textContent = `${Math.round(amount * 100)}%`;
-  $('frame-label').textContent = `FRAME ${frame} / ${config.totalFrames - 1}`;
-  $('scrub').style.setProperty('--progress', `${frame / (config.totalFrames - 1) * 100}%`);
-  $('play').textContent = icon(playing ? 'pause' : 'play');
-  $('play').setAttribute('aria-label', playing ? 'Pause scene' : 'Play scene');
-}
-function seek(index: number) {
-  scene.renderFrame(index); frame = index;
-  if (playing) { originFrame = frame; playOrigin = performance.now(); }
-  updateUI();
-}
-function setPlaying(value: boolean) {
-  playing = value; originFrame = frame; playOrigin = performance.now(); updateUI();
-}
-function loop(now: number) {
-  if (playing && !recording) {
-    const next = Math.min(config.totalFrames - 1, originFrame + Math.floor((now - playOrigin) * config.fps / 1000));
-    if (next !== frame) { scene.renderFrame(next); frame = next; updateUI(); }
-    if (frame === config.totalFrames - 1) setPlaying(false);
-  }
-  requestAnimationFrame(loop);
-}
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob), link = document.createElement('a');
-  link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-}
-function api() {
-  return {
-    ready: true, renderFrame: (index: number) => { setPlaying(false); seek(index); },
-    capture: (png = true) => scene.capture(png),
-    getState: () => ({ ...scene.getState(), playing }),
-    setIntensity: (value: number) => { scene.setIntensity(value); updateUI(); },
-    setConfig: (input: CameraSceneConfig) => { scene.setConfig(input); config = scene.getState().config; frame = Math.min(frame, config.totalFrames - 1); updateUI(); },
-  };
-}
-async function webmPreview() {
-  if (!('MediaRecorder' in window)) { toast('Recording unavailable. Use the frame-perfect PNG/MP4 CLI.'); return; }
-  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
-  if (!mimeType) { toast('WebM recording unavailable in this browser.'); return; }
-  const saved = { frame, playing }; let stream: MediaStream | undefined;
-  recording = true; setPlaying(false);
-  document.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button,input').forEach(el => el.disabled = true);
-  $('reference').hidden = true;
-  try {
-    seek(0);
-    const surface = document.createElement('canvas'); surface.width = config.width; surface.height = config.height;
-    const context = surface.getContext('2d'); if (!context) throw new Error('Preview capture context unavailable');
-    const paint = () => { context.fillStyle = '#ff00ff'; context.fillRect(0, 0, surface.width, surface.height); context.drawImage(scene.app.canvas, 0, 0); };
-    paint(); stream = surface.captureStream(config.fps);
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000 });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    const stopped = new Promise<void>((resolve, reject) => { recorder.onstop = () => resolve(); recorder.onerror = () => reject(new Error('Recorder failed')); });
-    recorder.start(); const start = performance.now();
-    toast('Real-time WebM preview only. Keep this tab visible; frames may drop.');
-    const draw = (now: number) => {
-      const elapsed = (now - start) / 1000;
-      seek(Math.min(config.totalFrames - 1, Math.floor(elapsed * config.fps))); paint();
-      if (elapsed < config.totalFrames / config.fps && recorder.state === 'recording') requestAnimationFrame(draw);
-      else if (recorder.state === 'recording') recorder.stop();
-    };
-    requestAnimationFrame(draw); await stopped;
-    download(new Blob(chunks, { type: mimeType }), `${config.id}-preview.webm`);
-  } catch (error) { toast(`Preview export failed: ${String(error)}`); }
-  finally {
-    stream?.getTracks().forEach(t => t.stop()); recording = false;
-    document.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button,input').forEach(el => el.disabled = false);
-    seek(saved.frame); setPlaying(saved.playing);
-    $('compare').setAttribute('aria-pressed', 'false'); $('compare').textContent = 'View original ↗';
-  }
-}
-function markup() {
-  root.innerHTML = `
-  <header class="topbar"><a class="brand" href="/"><span class="brand-mark">v.</span> VINNY<span class="brand-divider"></span><span class="brand-sub">CAMERA CORE · PHASE 1</span></a><span class="project-state"><i></i> CAMERA ONLY</span></header>
-  <main><section class="heading"><div><p class="eyebrow">A REUSABLE STORY CAMERA</p><h1>One frame. Every time<span>.</span></h1><p class="intro">Registered layers. Deterministic tracks. No effects or character motion.</p></div><div class="scene-number">01<span>CORE PROOF</span></div></section>
-  <div class="workspace"><section class="screen-column" aria-label="Camera preview and playback">
-  <div class="viewer" id="viewer"><div id="canvas-host"></div><img class="reference" id="reference" src="/assets/scene-01-normalized/reference.png" alt="Original composition before camera framing" hidden><div class="loading" id="loading">Opening camera-only scene…</div><div class="viewer-badge">CAMERA CORE <span>•</span> NO EFFECTS</div><button class="compare" id="compare" aria-pressed="false">View original ↗</button></div>
-  <div class="transport"><button class="play icon-button" id="play" aria-label="Play scene">▶</button><button class="icon-button" id="replay" aria-label="Restart scene">↺</button><span class="time"><span id="current">00:00:00</span><span class="muted" id="duration-label"> / ${timecode(config.totalFrames - 1)}</span></span><span class="transport-spacer"></span><span class="format" id="format-label">${config.width} × ${config.height} · ${config.fps} FPS</span><button class="icon-button" id="fullscreen" aria-label="Fullscreen preview">⛶</button></div>
-  <div class="timeline"><label class="sr-only" for="scrub">Frame index</label><input id="scrub" type="range" min="0" max="${config.totalFrames - 1}" step="1" value="0"><div class="ticks"><span>0</span><span id="frame-label">FRAME 0</span><span>${config.totalFrames - 1}</span></div></div>
-  <div class="beats"><button class="beat" data-frame="0"><span class="beat-index">01</span><span><strong>Baseline</strong><small>Neutral camera + headroom</small></span></button><button class="beat" data-frame="120"><span class="beat-index">02</span><span><strong>Inspect 120</strong><small>Repeatable frame sample</small></span></button><button class="beat" data-frame="360"><span class="beat-index">03</span><span><strong>Inspect 360</strong><small>Depth-weighted core proof</small></span></button><button class="beat" data-frame="575"><span class="beat-index">04</span><span><strong>Final hold</strong><small>No fade or transition</small></span></button></div>
-  <div class="below-preview"><span>MASTER: NUMBERED PNGs → H.264 · WEBM IS PREVIEW ONLY</span><button class="text-button" id="save-frame">Save frame PNG ↓</button></div>
-  </section><aside class="inspector"><div class="panel-title"><span>Camera core proof</span><span class="small-tag">2.5D</span></div><h2>Camera, not<br>decoration.</h2><p class="scene-description">A small depth push and translation to exercise the core. Not the hero edit or Camera Lab.</p>
-  <div class="section-label">REGISTERED LAYERS <span>DEPTH 0–1</span></div><div class="layers">${[...config.layers].reverse().map(l => `<div class="layer"><span class="layer-thumbnail" style="background-image:url('${l.asset}')"></span><span>${l.name}</span><input type="number" data-depth="${l.id}" min="0" max="1" step="0.05" value="${l.depth}" aria-label="${l.name} depth"><input type="checkbox" data-layer="${l.id}" checked aria-label="Show ${l.name}"></div>`).join('')}</div>
-  <div class="section-label motion-heading"><label for="motion">TRACK INTENSITY</label><output id="motion-value">100%</output></div><input id="motion" type="range" min="0" max="100" step="1" value="100"><div class="range-labels"><span>No-op</span><span>Authored maximum</span></div>
-  <div class="camera-diagnostics"><button id="check-coverage" class="text-button">Check this frame’s coverage ↗</button><p id="coverage-status" role="status">Magenta means uncovered pixels. Never hidden.</p><p>Base headroom: 1.15 · Roll limit: ±3°</p><button class="text-button" id="save-config">Save camera config ↓</button></div>
-  <button class="export-button" id="export">↓ <span>Export preview</span><span class="export-format">WEBM</span></button><p class="export-note">Real-time preview; frames may drop.<br>Use the PNG/MP4 CLI for the master.</p></aside></div>
-  <footer><span>FRAME-INDEXED · TRACK-DRIVEN · PIXIJS</span><span>No clock inside camera state.</span></footer></main><div class="toast" id="toast" role="status" aria-live="polite"></div>`;
-}
-async function init() {
-  document.body.classList.add('camera-only');
-  if (window.__CAMERA_INPUT__) config = window.__CAMERA_INPUT__.config;
-  if (renderMode) { document.body.classList.add('render-mode'); root.innerHTML = '<div id="canvas-host"></div>'; }
-  else markup();
-  scene = await createCameraScene($('canvas-host'), config); config = scene.getState().config;
-  scene.setIntensity(window.__CAMERA_INPUT__?.intensity ?? 1);
-  window.cameraStudio = api();
-  if (renderMode) return;
-  $('loading').remove(); updateUI();
-  $('play').onclick = () => { if (frame === config.totalFrames - 1) seek(0); setPlaying(!playing); };
-  $('replay').onclick = () => { seek(0); setPlaying(true); };
-  $('scrub').oninput = e => seek(Number((e.target as HTMLInputElement).value));
-  document.querySelectorAll<HTMLButtonElement>('[data-frame]').forEach(el => el.onclick = () => seek(Math.min(config.totalFrames - 1, Number(el.dataset.frame))));
-  $('motion').oninput = e => {
-    const intensity = Number((e.target as HTMLInputElement).value) / 100;
-    scene.setIntensity(intensity); $('motion-value').textContent = `${Math.round(intensity * 100)}%`;
-  };
-  document.querySelectorAll<HTMLInputElement>('[data-depth]').forEach(el => el.onchange = () => {
-    try {
-      const next = scene.getState().config;
-      next.layers.find(l => l.id === el.dataset.depth)!.depth = Number(el.value);
-      scene.setConfig(next); config = scene.getState().config;
-      el.value = String(config.layers.find(l => l.id === el.dataset.depth)!.depth);
-    } catch (error) { toast(String(error)); }
-  });
-  document.querySelectorAll<HTMLInputElement>('[data-layer]').forEach(el => el.onchange = () => scene.setVisible(el.dataset.layer!, el.checked));
-  $('check-coverage').onclick = () => {
-    const coverage = scene.capture(false).coverage;
-    $('coverage-status').textContent = coverage.uncoveredPixels ? `FAIL: ${coverage.uncoveredPixels} uncovered pixels at frame ${frame}.` : `PASS: frame ${frame} fully covered. Other frames not tested.`;
-  };
-  $('save-frame').onclick = () => {
-    const result = scene.capture();
-    void fetch(result.png!).then(r => r.blob()).then(blob => download(blob, `${config.id}-${String(frame).padStart(4, '0')}.png`));
-    if (result.coverage.uncoveredPixels) toast('Warning: this diagnostic PNG contains uncovered magenta pixels.');
-  };
-  $('save-config').onclick = () => {
-    const snapshot = scene.getState();
-    if (Object.values(snapshot.visible).some(visible => !visible)) { toast('Restore all layers before saving a master camera configuration. Visibility toggles are diagnostic only.'); return; }
-    download(new Blob([JSON.stringify({ config: snapshot.config, intensity: snapshot.intensity }, null, 2)], { type: 'application/json' }), `${config.id}.json`);
-  };
-  $('compare').onclick = () => {
-    const image = $<HTMLImageElement>('reference'); image.hidden = !image.hidden;
-    $('compare').setAttribute('aria-pressed', String(!image.hidden));
-    $('compare').textContent = image.hidden ? 'View original ↗' : 'Back to camera ↗';
-  };
-  $('fullscreen').onclick = async () => {
-    try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('viewer').requestFullscreen(); }
-    catch { toast('Fullscreen unavailable.'); }
-  };
-  $('export').onclick = () => void webmPreview();
-  document.addEventListener('keydown', e => {
-    if ((e.target as HTMLElement).matches('input,button,a') || recording) return;
-    if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
-    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') {
-      e.preventDefault(); seek(Math.max(0, Math.min(config.totalFrames - 1, frame + (e.code === 'ArrowRight' ? 1 : -1))));
-    }
-  });
-  document.addEventListener('visibilitychange', () => { if (document.hidden && !recording) setPlaying(false); });
-  requestAnimationFrame(loop);
-}
-init().catch(error => {
-  console.error(error); const target = document.getElementById('loading') ?? root;
-  target.textContent = `Camera initialization failed: ${String(error)}`;
-});
+declare global { interface Window { __CAMERA_INPUT__?: { config: CameraSceneConfig; intensity?: number }; cameraStudio: { ready:boolean; renderFrame:(n:number)=>void; capture:(png?:boolean)=>unknown; getState?:()=>unknown; setIntensity?:(n:number)=>void; setConfig?:(config:CameraSceneConfig)=>Promise<void> } } }
+const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
+const root=document.querySelector<HTMLDivElement>('#app')!;
+const DB='storystudio-projects',STORE='projects';
+let project:StoryProject=createProject('My New Story'), scene!:CameraScene, sceneId='',frame=0,playing=false,toastTimer=0,selectedTrack='';
+const uid=()=>crypto.randomUUID();
+function active(){return project.scenes.find(s=>s.id===sceneId)!;}
+function toast(message:string){const el=$('toast');if(!el)return;el.textContent=message;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=window.setTimeout(()=>el.classList.remove('visible'),4000);}
+function timecode(f:number,fps=active().fps){return `${Math.floor(f/fps/60).toString().padStart(2,'0')}:${Math.floor(f/fps%60).toString().padStart(2,'0')}:${(f%fps).toString().padStart(2,'0')}`;}
+function dbOpen():Promise<IDBDatabase>{return new Promise((resolve,reject)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
+async function persist(){project.updatedAt=new Date().toISOString();const snapshot=validateProject(project);const db=await dbOpen();await new Promise<void>((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(snapshot);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});db.close();renderLists();toast('Project saved locally');}
+async function removeProject(id:string){const db=await dbOpen();await new Promise<void>((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});db.close();}
+async function allProjects():Promise<StoryProject[]>{const db=await dbOpen();const result=await new Promise<StoryProject[]>((resolve,reject)=>{const r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});db.close();return result;}
+let listGeneration=0;
+function renderLists(){const p=$('project-list');const generation=++listGeneration;void allProjects().then(items=>{if(generation!==listGeneration)return;const fragment=document.createDocumentFragment();const all=[...items.filter(x=>x.id!==project.id),project];for(const x of all){const b=document.createElement('button');b.className='nav-item'+(x.id===project.id?' selected':'');b.dataset.projectId=x.id;b.textContent=x.title;b.onclick=()=>{if(x.id===project.id)return;void persist().then(()=>{project=x;sceneId=project.scenes[0]?.id??'';return switchScene();}).catch(e=>toast(`Save failed: ${String(e)}`));};fragment.append(b);}p.replaceChildren(fragment);}).catch(e=>console.error('Project list failed',e));
+ const list=$('scene-list');list.innerHTML='';project.scenes.forEach((s,i)=>{const b=document.createElement('button');b.className='scene-item'+(s.id===sceneId?' selected':'');b.innerHTML=`<span>${String(i+1).padStart(2,'0')}</span> ${escapeHtml(s.title ?? 'Untitled scene')} <small>${(s.totalFrames/s.fps).toFixed(1)}s</small>`;b.onclick=()=>{sceneId=s.id;void switchScene();};list.append(b);});}
+function escapeHtml(s:string){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));}
+function markup(){root.innerHTML=`<header class="topbar"><a class="brand"><span class="brand-mark">S</span> STORYSTUDIO <span class="brand-sub">ILLUSTRATED STORY ANIMATION</span></a><div class="actions"><button id="new-project">＋ New project</button><button id="open-project">Open</button><input id="project-file" type="file" accept=".story.json,application/json" hidden><button id="save">Save</button><button class="gold" id="export">Export frame PNG</button><button id="master-config">Master export config</button><button id="export-package">Transfer project</button></div></header>
+ <main class="studio"><aside class="navigator"><div class="block-title">PROJECTS <button id="rename-project">Rename</button></div><div id="project-list"></div><div class="row-actions"><button id="duplicate-project">Duplicate</button><button id="delete-project">Delete</button></div><div class="block-title scenes-title">SCENES <button id="add-scene">＋</button></div><div id="scene-list"></div><div class="row-actions"><button id="scene-up">↑</button><button id="scene-down">↓</button><button id="duplicate-scene">Duplicate</button></div><div class="nav-help">Start with a blank story, or load the illustrated example from the project menu.</div><button id="example" class="outline">Open Vinny example</button></aside>
+ <section class="center"><div class="viewer" id="viewer"><div id="canvas-host"></div><div class="empty-view" id="empty-view">Import artwork to begin arranging your scene.</div><span class="viewer-tag">2.5D · FRAME-ACCURATE PREVIEW</span></div><div class="transport"><button id="play" aria-label="Play">▶</button><button id="restart" aria-label="Restart">↺</button><span id="clock">00:00:00</span><span class="muted" id="duration"></span><input id="scrub" type="range" min="0" max="239" value="0"><span class="format" id="format"></span></div><div class="timeline-head"><b>TIMELINE</b><span id="frame-label"></span><button id="key-camera">＋ Camera keyframe</button></div><div class="track-row"><span>Camera</span><div class="track-line" id="camera-track"></div></div><div class="track-row"><span>Selected layer</span><div class="track-line" id="layer-track"></div></div><div class="timeline-tools"><button id="add-track">＋ Animate selected layer</button><select id="track-property" aria-label="Animation property"><option value="x">X</option><option value="y">Y</option><option value="zoom">Zoom / scale</option><option value="roll">Rotation</option></select><select id="easing"><option value="ease_in_out">Ease in-out</option><option value="linear">Linear</option><option value="ease_in">Ease in</option><option value="ease_out">Ease out</option><option value="hold">Hold</option></select><button id="delete-scene">Delete scene</button></div><div id="track-editor"></div><p class="note">PNG is a still. For frame-perfect MP4, download Master export config and run the CLI described in the README.</p></section>
+ <aside class="inspector"><div class="block-title">LAYERS <button id="import">＋ Import artwork</button><input id="asset-files" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></div><div class="layer-list" id="layer-list"></div><div class="row-actions"><button id="layer-up">Bring forward</button><button id="layer-down">Send back</button><button id="duplicate-layer">Duplicate</button></div><div class="block-title properties-title">PROPERTIES</div><div id="properties"><p class="muted">Select a layer to edit its transform.</p></div><div class="block-title">SCENE</div><label class="field">Scene title<input id="scene-title"></label><label class="field">Duration (seconds)<input id="scene-duration" type="number" min="1" max="600"></label><label class="field">Frame rate<input id="scene-fps" type="number" min="1" max="120"></label><p class="note">Artwork is stored in this browser. Use Transfer project to package a portable copy with the images.</p></aside></main><div class="toast" id="toast" role="status"></div>`;}
+let switchGeneration=0;
+async function switchScene(){const generation=++switchGeneration,cfg=active();playing=false;frame=0;const controls=[...root.querySelectorAll<HTMLButtonElement|HTMLInputElement|HTMLSelectElement>('button,input,select')];controls.forEach(el=>el.disabled=true);try{if(scene){const old=scene;scene=undefined!;old.destroy();}const next=await createCameraScene($('canvas-host'),cfg);if(generation!==switchGeneration){next.destroy();return;}scene=next;$('play').textContent='▶';$('empty-view').hidden=cfg.layers.length>0;renderLists();paint();}finally{if(generation===switchGeneration)controls.forEach(el=>el.disabled=false);}}
+function paint(redraw: boolean | void=true){const cfg=active();if(!scene)return;frame=Math.min(frame,cfg.totalFrames-1);$('empty-view').hidden=cfg.layers.length>0;scene.renderFrame(frame);$<HTMLInputElement>('scrub').max=String(cfg.totalFrames-1);$<HTMLInputElement>('scrub').value=String(frame);$('clock').textContent=timecode(frame);$('duration').textContent=` / ${timecode(cfg.totalFrames-1)}`;$('format').textContent=`${cfg.width}×${cfg.height} · ${cfg.fps} fps`;$('frame-label').textContent=`FRAME ${frame} / ${cfg.totalFrames-1}`;$<HTMLInputElement>('scene-title').value=cfg.title??'';$<HTMLInputElement>('scene-duration').value=(cfg.totalFrames/cfg.fps).toString();$<HTMLInputElement>('scene-fps').value=String(cfg.fps);if(redraw){renderLists();renderLayers();renderTracks();}else{renderLists();updateTimelineLabels();}}
+function updateTimelineLabels(){const cfg=active();$<HTMLInputElement>('scrub').max=String(cfg.totalFrames-1);$<HTMLInputElement>('scrub').value=String(frame);$('clock').textContent=timecode(frame);$('duration').textContent=` / ${timecode(cfg.totalFrames-1)}`;$('format').textContent=`${cfg.width}×${cfg.height} · ${cfg.fps} fps`;$('frame-label').textContent=`FRAME ${frame} / ${cfg.totalFrames-1}`;
+function renderLayers(){const list=$('layer-list');list.innerHTML='';const cfg=active();let selected=list.dataset.selected??cfg.layers[0]?.id??'';if(!cfg.layers.some(l=>l.id===selected))selected=cfg.layers[0]?.id??'';list.dataset.selected=selected;
+ [...cfg.layers].sort((a,b)=>(b.order??0)-(a.order??0)).forEach(l=>{const row=document.createElement('div');row.className='layer-row'+(l.id===selected?' selected':'');row.innerHTML=`<input type="checkbox" ${l.visible===false?'':'checked'} aria-label="Show layer"><span class="thumb"></span><button class="layer-name">${escapeHtml(l.name)}</button><button class="delete-layer" title="Delete layer">×</button>`;row.querySelector<HTMLElement>('.thumb')!.style.backgroundImage=`url(${JSON.stringify(l.asset)})`;row.onclick=e=>{if((e.target as HTMLElement).tagName==='INPUT'||(e.target as HTMLElement).classList.contains('delete-layer'))return;list.dataset.selected=l.id;renderLayers();};row.querySelector('input')!.onchange=e=>{l.visible=(e.target as HTMLInputElement).checked;scene.setConfig(cfg);};row.querySelector<HTMLButtonElement>('.layer-name')!.ondblclick=()=>{const name=prompt('Layer name',l.name);if(name){l.name=name;paint();}};row.querySelector<HTMLButtonElement>('.delete-layer')!.onclick=()=>{if(!confirm(`Delete layer “${l.name}” and its animation tracks?`))return;cfg.layers=cfg.layers.filter(x=>x.id!==l.id);cfg.tracks=cfg.tracks.filter(t=>t.target!==`layer:${l.id}`);list.dataset.selected='';void scene.setConfig(cfg).then(paint);};list.append(row);});renderProperties();}
+function renderProperties(){const el=$('properties'),layer=active().layers.find(l=>l.id===$('layer-list').dataset.selected);if(!layer){el.innerHTML='<p class="muted">Select a layer to edit its transform.</p>';return;}el.innerHTML=`<div class="selected-name">${escapeHtml(layer.name)}</div>${[['x','X'],['y','Y'],['scale','Scale'],['rotation','Rotation °'],['depth','Depth'],['opacity','Opacity']].map(([key,label])=>`<label class="field">${label}<input data-prop="${key}" type="number" step="${key==='depth'||key==='opacity'?'0.05':'1'}" value="${(layer as any)[key]??(key==='scale'||key==='opacity'?1:0)}"></label>`).join('')}`;el.querySelectorAll<HTMLInputElement>('[data-prop]').forEach(input=>input.onchange=()=>{const prop=input.dataset.prop!,n=Number(input.value);const previous=(layer as unknown as Record<string,unknown>)[prop];(layer as unknown as Record<string,unknown>)[prop]=n;if(prop==='depth')layer.depth=Math.max(0,Math.min(1,n));void scene.setConfig(active()).then(()=>{input.value=String((layer as unknown as Record<string,unknown>)[prop]);}).catch(e=>{(layer as unknown as Record<string,unknown>)[prop]=previous;input.value=String(previous);toast(String(e));});});}
+function renderTracks(){const cfg=active();const draw=(id:string,target:string)=>{const line=$(id);line.innerHTML='';cfg.tracks.filter(t=>t.target===target).forEach(t=>{const marker=document.createElement('button');marker.className='key-marker';marker.dataset.trackId=t.id;marker.title=`${t.property}: ${t.startFrame}–${t.endFrame}`;marker.style.left=`${100*t.startFrame/cfg.totalFrames}%`;marker.onclick=()=>{selectedTrack=t.id;frame=t.startFrame;paint(false);renderTrackEditor();};line.append(marker);});};draw('camera-track','camera');const layer=$('layer-list').dataset.selected;draw('layer-track',layer?`layer:${layer}`:'');renderTrackEditor();}
+function renderTrackEditor(){const box=$('track-editor'),track=active().tracks.find(t=>t.id===selectedTrack);if(!track){box.innerHTML='<p class="note">Select a timeline diamond to edit its track.</p>';return;}box.innerHTML=`<div class="track-details"><b>${escapeHtml(track.target)} · ${track.property}</b><label>Start frame <input data-track="startFrame" type="number" value="${track.startFrame}"></label><label>End frame <input data-track="endFrame" type="number" value="${track.endFrame}"></label><label>Start value <input data-track="startValue" type="number" step="0.01" value="${track.startValue}"></label><label>End value <input data-track="endValue" type="number" step="0.01" value="${track.endValue}"></label><label>Intensity <input data-track="intensity" type="number" min="0" max="1" step="0.05" value="${track.intensity}"></label><label>Easing <select data-track="easing">${['linear','ease_in','ease_out','ease_in_out','hold'].map(v=>`<option value="${v}" ${v===track.easing?'selected':''}>${v}</option>`).join('')}</select></label><button id="remove-track">Delete track</button></div>`;box.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-track]').forEach(input=>input.onchange=()=>{const key=input.dataset.track!;const previous=structuredClone(track);if(key==='easing')track.easing=input.value as Easing;else (track as unknown as Record<string,unknown>)[key]=Number(input.value);void scene.setConfig(active()).then(()=>{const applied=scene.getState().config.tracks.find(t=>t.id===track.id);if(applied)Object.assign(track,applied);paint();}).catch(e=>{Object.assign(track,previous);toast(String(e));paint();});});$('remove-track').onclick=()=>{active().tracks=active().tracks.filter(t=>t.id!==track.id);selectedTrack='';void scene.setConfig(active()).then(paint);};}
+function addTrack(target:'camera'|`layer:${string}`,property:Property){const cfg=active(),end=Math.min(cfg.totalFrames-1,Math.max(frame+1,Math.floor(cfg.totalFrames*.8)));const t:Track={id:uid(),target,property,startFrame:frame,endFrame:end,startValue:property==='zoom'?1:0,endValue:property==='zoom'?1.12:property==='roll'?2:80,easing:$<HTMLSelectElement>('easing').value as Easing,intensity:1,limits:{...cfg.camera.limits[property]},holdAfter:true};cfg.tracks.push(t);selectedTrack=t.id;void scene.setConfig(cfg).then(paint);}
+function download(blob:Blob,name:string){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}
+async function portableCopy(){const copy=structuredClone(project);for(const s of copy.scenes)for(const l of s.layers){if(!l.asset.startsWith('data:')){const response=await fetch(l.asset);if(!response.ok)throw new Error(`Cannot package asset ${l.name}`);const blob=await response.blob();l.asset=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob);});}}return copy;}
+async function exportPackage(){const payload={format:'storystudio-portable',version:1,project:await portableCopy()};download(new Blob([JSON.stringify(payload)],{type:'application/json'}),`${project.title.replace(/[^\w-]+/g,'-')}.story.json`);}
+async function exportMasterConfig(){const copy=await portableCopy(),selected=copy.scenes.find(s=>s.id===sceneId);if(!selected)throw new Error('Scene not found');download(new Blob([JSON.stringify({config:selected,intensity:1})],{type:'application/json'}),`${(selected.title??'scene').replace(/[^\w-]+/g,'-')}.camera.json`);}
+async function importProject(file:File){const data=JSON.parse(await file.text());if(data.project&&(data.format!=='storystudio-portable'||data.version!==1))throw new Error('Unsupported project package version');const incoming=validateProject(data.project??data);if(data.assets)for(const s of incoming.scenes)for(const l of s.layers)if(data.assets[l.id])l.asset=data.assets[l.id];await persist();incoming.id=uid();incoming.title=`${incoming.title} (imported)`;project=incoming;sceneId=project.scenes[0]?.id??'';await persist();await switchScene();}
+async function init(){if(new URLSearchParams(location.search).has('render')){const input=window.__CAMERA_INPUT__;if(!input)throw new Error('Render configuration missing');root.innerHTML='<div id="canvas-host"></div>';scene=await createCameraScene($('canvas-host'),input.config);scene.setIntensity(input.intensity??1);window.cameraStudio={ready:true,renderFrame:n=>scene.renderFrame(n),capture:(png=true)=>scene.capture(png),getState:()=>scene.getState(),setIntensity:n=>scene.setIntensity(n),setConfig:config=>scene.setConfig(config)};return;}markup();const saved=await allProjects().catch(()=>[]);project=saved[0]??createProject('My New Story');sceneId=project.scenes[0]!.id;await switchScene();window.cameraStudio={ready:true,renderFrame(n){frame=n;scene.renderFrame(n);paint(false);},capture(png=true){return scene.capture(png);},getState:()=>scene.getState(),setIntensity:n=>scene.setIntensity(n),setConfig:config=>scene.setConfig(config)};
+ $('new-project').onclick=async()=>{const title=prompt('Project title','My New Story');if(title===null)return;await persist();project=createProject(title);project.scenes[0]!.title='Scene 1';await persist();sceneId=project.scenes[0]!.id;await switchScene();};$('rename-project').onclick=async()=>{const t=prompt('Project title',project.title);if(t){project.title=t;await persist();}};$('save').onclick=()=>void persist().catch(e=>toast(`Save failed: ${String(e)}`));$('add-scene').onclick=async()=>{const s=createScene(`Scene ${project.scenes.length+1}`,10,project.settings.width,project.settings.height,project.settings.fps);project.scenes.push(s);sceneId=s.id;await switchScene();};$('delete-scene').onclick=async()=>{if(project.scenes.length===1){toast('A project must keep one scene');return;}if(!confirm(`Delete scene “${active().title}” and all its layers?`))return;project.scenes=project.scenes.filter(s=>s.id!==sceneId);sceneId=project.scenes[0]!.id;await switchScene();};$('example').onclick=async()=>{await persist();project=exampleProject();project.id=uid();sceneId=project.scenes[0]!.id;await persist();await switchScene();};$('scene-title').onchange=()=>{active().title=$<HTMLInputElement>('scene-title').value;renderLists();};$('scene-duration').onchange=()=>{const cfg=active(),seconds=Number($<HTMLInputElement>('scene-duration').value);if(!Number.isFinite(seconds)||seconds<=0||seconds>600||seconds*cfg.fps>100000){toast('Duration must be positive, at most 600 seconds and 100000 frames');paint(false);return;}cfg.totalFrames=Math.max(1,Math.round(seconds*cfg.fps));cfg.tracks=cfg.tracks.map(t=>({...t,endFrame:Math.min(t.endFrame,cfg.totalFrames-1),startFrame:Math.min(t.startFrame,cfg.totalFrames-1)}));void scene.setConfig(cfg).then(()=>paint(false));};
+ $('duplicate-project').onclick=async()=>{await persist();project=structuredClone(project);project.id=uid();project.title+=' (copy)';await persist();sceneId=project.scenes[0].id;await switchScene();};$('delete-project').onclick=async()=>{if(!confirm(`Permanently delete project “${project.title}” from this browser?`))return;await removeProject(project.id);const saved=await allProjects();project=saved[0]??createProject('Untitled Story');sceneId=project.scenes[0].id;await switchScene();};
+ $('duplicate-scene').onclick=async()=>{const copy=structuredClone(active());copy.id=uid();copy.title=(copy.title??'Scene')+' (copy)';const index=project.scenes.findIndex(s=>s.id===sceneId);project.scenes.splice(index+1,0,copy);sceneId=copy.id;await switchScene();};for(const [id,delta] of [['scene-up',-1],['scene-down',1]] as const)$(id).onclick=()=>{const i=project.scenes.findIndex(s=>s.id===sceneId),j=i+delta;if(j<0||j>=project.scenes.length)return;[project.scenes[i],project.scenes[j]]=[project.scenes[j],project.scenes[i]];renderLists();};
+ for(const [id,delta] of [['layer-up',1],['layer-down',-1]] as const)$(id).onclick=()=>{const cfg=active(),layers=cfg.layers.sort((a,b)=>(a.order??0)-(b.order??0)),i=layers.findIndex(l=>l.id===$('layer-list').dataset.selected),j=i+delta;if(i<0||j<0||j>=layers.length)return;[layers[i],layers[j]]=[layers[j],layers[i]];layers.forEach((l,n)=>l.order=n);void scene.setConfig(cfg).then(paint);};$('duplicate-layer').onclick=()=>{const cfg=active(),l=cfg.layers.find(x=>x.id===$('layer-list').dataset.selected);if(!l)return;const copy=structuredClone(l);copy.id=uid();copy.name+=' (copy)';copy.order=Math.max(-1,...cfg.layers.map(x=>x.order??0))+1;cfg.layers.push(copy);for(const t of [...cfg.tracks])if(t.target===`layer:${l.id}`)cfg.tracks.push({...structuredClone(t),id:uid(),target:`layer:${copy.id}`});$('layer-list').dataset.selected=copy.id;void scene.setConfig(cfg).then(paint);};
+ $('scene-fps').onchange=()=>{const cfg=active(),fps=Number($<HTMLInputElement>('scene-fps').value);if(!Number.isInteger(fps)||fps<1||fps>120){toast('Frame rate must be an integer from 1 to 120');paint();return;}const ratio=fps/cfg.fps;cfg.totalFrames=Math.max(1,Math.round(cfg.totalFrames*ratio));cfg.tracks.forEach(t=>{t.startFrame=Math.min(cfg.totalFrames-1,Math.round(t.startFrame*ratio));t.endFrame=Math.min(cfg.totalFrames-1,Math.max(t.startFrame,Math.round(t.endFrame*ratio)));});cfg.fps=fps;frame=Math.min(cfg.totalFrames-1,Math.round(frame*ratio));void scene.setConfig(cfg).then(()=>paint(false));};
+ $('import').onclick=()=>$<HTMLInputElement>('asset-files').click();$('asset-files').onchange=async()=>{const files=Array.from($<HTMLInputElement>('asset-files').files??[]);for(const file of files){if(!/^image\/(png|jpeg|webp)$/.test(file.type))continue;const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file);});try{await new Promise<void>((resolve,reject)=>{const image=new Image();image.onload=()=>resolve();image.onerror=()=>reject(new Error(`Cannot decode ${file.name}`));image.src=data;});const cfg=active();const layer={id:uid(),name:file.name.replace(/\.[^.]+$/,'')||'Artwork',asset:data,depth:cfg.layers.length?Math.min(1,cfg.layers.length/(cfg.layers.length+1)):0,order:Math.max(-1,...cfg.layers.map(l=>l.order??0))+1,x:0,y:0,scale:1,rotation:0,opacity:1,visible:true};cfg.layers.push(layer);try{await scene.setConfig(cfg);}catch(error){cfg.layers=cfg.layers.filter(l=>l.id!==layer.id);throw error;}$('layer-list').dataset.selected=layer.id;}catch(error){toast(`Import failed: ${String(error)}`);}}$<HTMLInputElement>('asset-files').value='';paint();};
+ $('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'Ⅱ':'▶';};$('restart').onclick=()=>{frame=0;paint();};$('scrub').oninput=e=>{frame=Number((e.target as HTMLInputElement).value);paint(false);};$('key-camera').onclick=()=>addTrack('camera',$<HTMLSelectElement>('track-property').value as Property);$('add-track').onclick=()=>{const id=$('layer-list').dataset.selected;if(id)addTrack(`layer:${id}`,$<HTMLSelectElement>('track-property').value as Property);else toast('Select a layer first');};$('export').onclick=()=>{const result=scene.capture(true,false);void fetch(result.png!).then(r=>r.blob()).then(b=>download(b,`${active().title}-${frame}.png`));};$('master-config').onclick=()=>void exportMasterConfig().catch(e=>toast(`Export failed: ${String(e)}`));$('export-package').onclick=()=>void exportPackage().catch(e=>toast(`Transfer failed: ${String(e)}`));$('open-project').onclick=()=>$<HTMLInputElement>('project-file').click();$('project-file').onchange=()=>{const f=$<HTMLInputElement>('project-file').files?.[0];if(f)void importProject(f).catch(e=>toast(String(e)));};
+ $('scene-list').addEventListener('dblclick',()=>{const name=prompt('Scene name',active().title);if(name){active().title=name;paint();}});
+ let previous=performance.now(),remainder=0;function tick(now:number){if(playing){remainder+=(now-previous)*active().fps/1000;const steps=Math.floor(remainder);if(steps){remainder-=steps;frame=Math.min(active().totalFrames-1,frame+steps);paint(false);if(frame===active().totalFrames-1){playing=false;$('play').textContent='▶';}}}else remainder=0;previous=now;requestAnimationFrame(tick);}requestAnimationFrame(tick);
+ $('project-list').innerHTML='';renderLists();}
+init().catch(e=>{console.error(e);root.textContent=`StoryStudio failed to initialize: ${String(e)}`;});
