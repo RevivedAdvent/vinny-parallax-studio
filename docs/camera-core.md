@@ -1,5 +1,7 @@
 # Frame-indexed camera core — Phase 1
 
+**Historical phase notes.** For current editor behavior and exact projection see the [camera system reference](camera-system-reference.md).
+
 This is a reusable 2.5D camera foundation, not the preset catalog, Camera Lab, or the hero story edit.
 
 ## Source of truth
@@ -67,7 +69,7 @@ Original files are untouched under `public/assets/scene-01/`. `scripts/normalize
 
 The source valley was unexpectedly semi-transparent (alpha 239–255). The initial frame-120 check failed with 20,281 subopaque pixels, min framebuffer alpha 243, no fully transparent pixels. The normalized valley's existing RGB was made opaque; no source RGB was invented or edited. The failure and repair remain documented. Other cutout alpha is preserved.
 
-Camera rendering clears to transparent, with magenta visible behind the preview. Capture reads the actual framebuffer alpha: **any alpha below 255 fails**, including partially exposed pixels that an exact-RGB-magenta scan could miss. Captured PNGs explicitly matte those gaps magenta. No caption, shading, overlay or transition can obscure the test; the camera renderer contains none.
+Camera rendering clears to transparent; diagnostic captures can matte uncovered pixels magenta. Capture reads the actual framebuffer alpha: **any alpha below 255 fails**, including partially exposed pixels that an exact-RGB-magenta scan could miss. Captured PNGs explicitly matte those gaps magenta. No caption, shading, overlay or transition can obscure the test; the camera renderer contains none.
 
 The master render records every frame's coverage count, bounding box, transforms, PNG hash and config. First uncovered frame fails the export and preserves evidence. It does not auto-crop or silently change limits/headroom. A separate deliberate underscan control proves the detector can fail.
 
@@ -77,4 +79,4 @@ An opaque valley can still fill a canopy cutout with the wrong scenery. Final-co
 
 Supply ordered full-canvas RGBA layers at a common registered resolution, reference them with public asset URLs, and provide a JSON configuration with this schema. `scripts/render-frames.mjs --config` accepts either the bare scene or `{config,intensity}` saved by the studio. Its dimensions, fps and duration are data, not Vinny-specific constants in the core. Use `createCameraScene(host, config)` to initialize a different story in an integration.
 
-Renderer `setConfig` supports track/depth/camera/timing edits with unchanged image topology; changing canvas dimensions, layer order or asset URLs requires a new renderer instance. A multi-story asset importer, timeline editor and scene browser are not part of Phase 1.
+Renderer `setConfig` supports track/depth/camera/timing edits without reloading layers. Layer order or asset changes reload sprites; canvas dimension changes require a new renderer. The current editor adds image import, a basic timeline and a scene browser.

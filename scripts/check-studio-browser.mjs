@@ -13,6 +13,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.nav-item.selected')?.textContent === 'My New Story');
   assert.equal(await page.locator('.nav-item.selected').textContent(), 'My New Story');
   assert.equal(await page.locator('.layer-row').count(), 0);
+  assert.equal(await page.locator('#empty-view').isVisible(), true, 'blank scene shows import guidance');
   await page.locator('#scene-duration').fill('4');
   await page.locator('#scene-duration').dispatchEvent('change');
   await page.locator('#add-scene').click();
@@ -29,17 +30,88 @@ try {
   })));
   await page.locator('#asset-files').setInputFiles(files);
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 2);
+  assert.equal(await page.locator('#empty-view').isVisible(), false, 'artwork hides import guidance');
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('.delete-layer').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 1);
+  assert.equal(await page.locator('#empty-view').isVisible(), false, 'remaining artwork hides guidance');
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('.delete-layer').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 0);
+  assert.equal(await page.locator('#empty-view').isVisible(), true, 'deleting last artwork restores guidance');
+  await page.locator('#asset-files').setInputFiles(files);
+  await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 2);
+  assert.equal(await page.locator('#empty-view').isVisible(), false, 'reimport hides guidance');
+  await page.evaluate(async () => {
+    window.testCanvas = document.querySelector('canvas');
+    const url = performance.getEntriesByType('resource').map(r => r.name).find(n => /\/pixi__js\.js/.test(n));
+    if (!url) throw new Error('Pixi module was not loaded');
+    const { Assets } = await import(url);
+    const load = Assets.load.bind(Assets);
+    window.assetLoads = 0;
+    Assets.load = (...args) => { window.assetLoads++; return load(...args); };
+  });
+  await page.locator('[data-slider="x"]').fill('80');
+  assert.equal(await page.locator('[data-prop="x"]').inputValue(), '80');
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.layers[1].x), 80);
+  await page.locator('[data-slider="x"]').focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.locator('[data-prop="x"]').inputValue(), '81');
+  await page.locator('[data-prop="x"]').fill('5000');
+  await page.locator('[data-prop="x"]').dispatchEvent('change');
+  assert.equal(await page.locator('[data-prop="x"]').inputValue(), '5000', 'exact values outside the slider range are preserved');
+  assert.equal(await page.locator('[data-slider="x"]').inputValue(), '1920');
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.layers[1].x), 5000);
   await page.locator('[data-prop="x"]').fill('120');
   await page.locator('[data-prop="x"]').dispatchEvent('change');
-  await page.waitForFunction(() => document.querySelector('[data-prop="x"]')?.value === '120');
+  assert.equal(await page.locator('[data-slider="x"]').inputValue(), '120');
+  assert.equal(await page.evaluate(() => document.querySelector('canvas') === window.testCanvas), true, 'slider keeps the renderer');
+  assert.equal(await page.evaluate(() => window.assetLoads), 0, 'layer edits do not reload textures');
+  await page.locator('[data-prop="scale"]').fill('-1');
+  await page.locator('[data-prop="scale"]').dispatchEvent('change');
+  assert.equal(await page.locator('[data-prop="scale"]').inputValue(), '1', 'invalid scale rejected');
+  await page.locator('[data-slider="opacity"]').fill('50');
+  assert.equal(await page.locator('[data-prop="opacity"]').inputValue(), '50');
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.layers[1].opacity), 0.5);
+  await page.locator('[data-prop="opacity"]').fill('100');
+  await page.locator('[data-prop="opacity"]').dispatchEvent('change');
+  await page.locator('[data-prop="depth"]').fill('2');
+  await page.locator('[data-prop="depth"]').dispatchEvent('change');
+  assert.equal(await page.locator('[data-prop="depth"]').inputValue(), '1', 'depth uses validation clamp');
   await page.locator('[data-prop="depth"]').fill('0.7');
   await page.locator('[data-prop="depth"]').dispatchEvent('change');
   await page.locator('#track-property').selectOption('zoom');
+  await page.locator('#new-projection').selectOption('dolly');
   await page.locator('#key-camera').click();
+  assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly');
+  await page.locator('[data-track="projection"]').selectOption('uniform');
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').projection), 'uniform');
+  await page.locator('[data-track-slider="intensity"]').fill('50');
+  assert.equal(await page.locator('[data-track="intensity"]').inputValue(), '50');
+  await page.locator('[data-track="startFrame"]').fill('100');
+  await page.locator('[data-track="startFrame"]').dispatchEvent('change');
+  assert.ok(Number(await page.locator('[data-track="endFrame"]').inputValue()) >= 100);
+  for (const easing of ['linear','ease_in','ease_out','ease_in_out','hold','overshoot_settle','seeded_noise']) {
+    await page.locator('[data-track="easing"]').selectOption(easing);
+    assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').easing), easing);
+  }
+  await page.locator('[data-noise="seed"]').fill('842');
+  await page.locator('[data-noise="seed"]').dispatchEvent('change');
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').noise.seed), 842);
+  assert.equal(await page.evaluate(() => window.assetLoads), 0, 'track edits do not reload textures');
   await page.locator('#track-property').selectOption('x');
   await page.locator('#add-track').click();
   await page.locator('[data-track="endValue"]').fill('30');
   await page.locator('[data-track="endValue"]').dispatchEvent('change');
+  await page.locator('#scrub').fill('42');
+  assert.equal(await page.locator('#frame-label').textContent(), 'FRAME 42 / 143');
+  await page.locator('body').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.locator('#scrub').inputValue(), '43');
+  await page.keyboard.press('Home');
+  assert.equal(await page.locator('#scrub').inputValue(), '0');
+  await page.keyboard.press('End');
+  assert.equal(await page.locator('#scrub').inputValue(), '143');
   await page.locator('#scrub').fill('42');
   const first = await page.evaluate(() => window.cameraStudio.capture().png);
   await page.locator('#scrub').fill('80');
@@ -62,6 +134,36 @@ try {
   assert.equal(manifest.project.scenes[1].tracks.length, 2);
   assert.equal(manifest.project.scenes[1].tracks.find(t => t.target.startsWith('layer:')).endValue, 30);
   assert.ok(manifest.project.scenes[1].layers.every(l => l.asset.startsWith('data:image/png;base64,')));
+  // Exercise camera X/Y creation and the valid noise defaults without changing the saved package.
+  await page.locator('#easing').selectOption('seeded_noise');
+  for (const property of ['x', 'y']) {
+    await page.locator('#track-property').selectOption(property);
+    await page.locator('#key-camera').click();
+    const cameraTrack = await page.evaluate(property => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera' && t.property === property), property);
+    assert.equal(cameraTrack.easing, 'seeded_noise');
+    assert.deepEqual(cameraTrack.noise, {seed:1, amplitude:0, frequency:1});
+    await page.locator('[data-track="endValue"]').fill('15');
+    await page.locator('[data-track="endValue"]').dispatchEvent('change');
+    assert.equal(await page.evaluate(id => window.cameraStudio.getState().config.tracks.find(t => t.id === id).endValue, cameraTrack.id), 15);
+    await page.locator('[data-track="endFrame"]').fill('1');
+    await page.locator('[data-track="endFrame"]').dispatchEvent('change');
+    assert.ok(Number(await page.locator('[data-track="startFrame"]').inputValue()) <= 1);
+    assert.equal(await page.locator(`[data-track-id="${cameraTrack.id}"]`).evaluate(el => el.classList.contains('selected')), true);
+  }
+  await page.locator('#scrub').fill('42');
+  const editedPreview = await page.evaluate(() => window.cameraStudio.capture().png);
+  const editedEvent = page.waitForEvent('download');
+  await page.locator('#master-config').click();
+  const editedConfig = JSON.parse(await readFile(await (await editedEvent).path()));
+  const editedRuntime = await launch();
+  try {
+    const renderPage = await editedRuntime.browser.newPage();
+    await renderPage.addInitScript(input => { window.__CAMERA_INPUT__ = input; }, editedConfig);
+    await renderPage.goto(editedRuntime.url + '/?render=1');
+    await renderPage.waitForFunction(() => window.cameraStudio?.ready);
+    const editedExport = await renderPage.evaluate(() => { window.cameraStudio.renderFrame(42); return window.cameraStudio.capture().png; });
+    assert.equal(editedExport, editedPreview, 'master config reproduces edited camera and layer tracks');
+  } finally { await editedRuntime.close(); }
   await page.reload();
   await page.waitForFunction(() => window.cameraStudio?.ready);
   await page.locator(`[data-project-id="${manifest.project.id}"]`).click();
@@ -79,12 +181,24 @@ try {
   assert.equal(await page.evaluate(() => window.cameraStudio.capture().png), first, 'portable import preserves pixels');
   await page.locator('#example').click();
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 4, null, {timeout:60000});
+  await page.locator('[data-track-id="core-depth-push"]').click();
+  assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly');
+  await page.locator('[data-track-id="core-translation"]').click();
+  assert.match(await page.locator('#track-editor b').textContent(), /camera · x/);
+  await page.locator('[data-track-id="core-depth-push"]').click();
+  assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly', 'overlapping tracks remain independently selectable');
+  await page.locator('#scrub').fill('120');
+  const examplePreview = await page.evaluate(() => window.cameraStudio.capture().png);
   const configEvent=page.waitForEvent('download');await page.locator('#master-config').click();
   const configDownload=await configEvent;const configBytes=await readFile(await configDownload.path());const config=JSON.parse(configBytes);
   assert.equal(config.config.layers.length,4);assert.ok(config.config.layers.every(l=>l.asset.startsWith('data:image/png')));
   const testInput={config:config.config,intensity:1};
   const rendered=await launch();
-  try {const renderPage=await rendered.browser.newPage({viewport:{width:1920,height:1080}});await renderPage.addInitScript(input=>{window.__CAMERA_INPUT__=input;},testInput);await renderPage.goto(rendered.url+'/?render=1');await renderPage.waitForFunction(()=>window.cameraStudio?.ready);const png=await renderPage.evaluate(()=>{window.cameraStudio.renderFrame(120);return window.cameraStudio.capture().png;});assert.ok(png.startsWith('data:image/png'));}finally{await rendered.close();}
+  try {const renderPage=await rendered.browser.newPage({viewport:{width:1920,height:1080}});await renderPage.addInitScript(input=>{window.__CAMERA_INPUT__=input;},testInput);await renderPage.goto(rendered.url+'/?render=1');await renderPage.waitForFunction(()=>window.cameraStudio?.ready);const png=await renderPage.evaluate(()=>{window.cameraStudio.renderFrame(120);return window.cameraStudio.capture().png;});assert.ok(png.startsWith('data:image/png'));assert.equal(png,examplePreview,'master render mode reproduces example preview pixels');}finally{await rendered.close();}
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({width, height:1000});
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no horizontal document overflow at ${width}px`);
+  }
   assert.deepEqual(errors, []);
   console.log('StoryStudio browser workflow passed: two durations, imported cutouts, layer properties, editable tracks, repeatable pixels, IndexedDB reload, portable import, and example frame CLI export.');
 } finally { await runtime.close(); }

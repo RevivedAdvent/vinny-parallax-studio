@@ -6,13 +6,13 @@ StoryStudio is a local, beginner-oriented 2.5D editor for arranging illustrated 
 
 Requires Node.js 22.18 or newer, npm and a browser with WebGL enabled.
 
-```powershell
-cd E:\vinny-parallax-studio
+```sh
+cd /path/to/vinny-parallax-studio
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The project is a Git working tree; changes are local and uncommitted.
+Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The application stores projects locally in your browser.
 
 ## Create a story
 
@@ -20,7 +20,7 @@ Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The project is a
 2. Use **＋** beside Scenes to add a scene. Select a scene in the left navigator; use Scene properties to change its title, duration in seconds, and frame rate. The arrow buttons reorder scenes and **Duplicate** makes an independent scene copy. Deleting a scene asks for confirmation.
 3. Choose **Import artwork** and select PNG, JPEG or WebP files. Multiple images can be imported together. Full-canvas transparent artwork and smaller cutouts are both supported. The layer list is shown front-to-back; use Bring forward / Send back, the visibility checkbox, duplicate, and delete controls. Double-click a layer name to rename it.
 4. Select a layer and adjust X, Y, scale, rotation, opacity and depth in Properties. The thumbnail shows the selected image. An imported image starts centered, at its native size. Position and scale it to fit your composition.
-5. Move the playhead. Choose an animation property and easing, then click **＋ Camera keyframe** or **＋ Animate selected layer**. Click a diamond on the timeline to edit the track's start/end frames, values, easing and intensity, or delete it. Zoom/scale values are multipliers (1 is neutral); X/Y values are pixels; rotation is degrees. Positive camera movement shifts artwork in the opposite direction, weighted by depth. Layer motion moves only that layer. Tracks are additive, so multiple tracks on a property combine.
+5. Move the playhead. Choose an animation property, easing and (for camera zoom) projection, then click **＋ Camera keyframe** or **＋ Animate selected layer**. Click a track's diamond or duration bar to edit its start/end frames, values, easing and intensity, or delete it. Zoom/scale values are multipliers (1 is neutral); X/Y values are pixels; rotation is degrees. Positive camera movement shifts artwork in the opposite direction, weighted by depth. Layer motion moves only that layer. Tracks are additive, so multiple tracks on a property combine.
 6. Use Play/Pause, Restart and the scrubber to inspect individual integer frames. Click **Export frame PNG** to save a still with transparency intact. The preview can skip displayed frames on slow hardware; frame evaluation is deterministic.
 
 **Open Vinny example** creates a separate project from the existing normalized artwork and camera-proof tracks. It is an example rather than a template for new projects. The older effects/captions preview is still available at `/legacy.html` on the development server; it is a separate historical implementation, not the new project renderer.
@@ -32,18 +32,15 @@ Open the URL printed by Vite, normally `http://127.0.0.1:5173`. The project is a
 ## Frame-accurate scene MP4
 
 1. Select the scene and choose **Master export config**. The downloaded `.camera.json` contains that scene's settings, tracks and embedded assets, including unsaved edits.
-2. Install Playwright Chromium once: `npx playwright install chromium`. Install FFmpeg and FFprobe, with libx264 or libopenh264, and put them on PATH; alternatively set `FFMPEG_PATH` and `FFPROBE_PATH` to their executables. On this machine the separately downloaded tools can be used with:
-
-   ```powershell
-   $env:FFMPEG_PATH = 'E:\story-tools\ffmpeg-9.0.2-essentials_build\bin\ffmpeg.exe'
-   $env:FFPROBE_PATH = 'E:\story-tools\ffmpeg-9.0.2-essentials_build\bin\ffprobe.exe'
-   ```
+2. Install Playwright Chromium once: `npx playwright install chromium`. Install FFmpeg and FFprobe, with libx264 or libopenh264, and put them on PATH; alternatively set `FFMPEG_PATH` and `FFPROBE_PATH` to their executables.
 
 3. Run the existing numbered-PNG / FFmpeg master exporter, supplying the downloaded config and a **new** output name:
 
-   ```powershell
-   npm run export:video -- output/my-scene.mp4 --config "$env:USERPROFILE\Downloads\Scene-1.camera.json"
+   ```sh
+   npm run export:video -- output/my-scene.mp4 --config "$HOME/Downloads/Scene-1.camera.json"
    ```
+
+   On Windows PowerShell, use `$env:USERPROFILE\Downloads\Scene-1.camera.json` for the downloaded configuration path.
 
 The exporter starts its own Vite server and Chromium, renders each frame through the same scene renderer and evaluator as the editor, then encodes and verifies H.264 dimensions, rate, duration and frame count. It refuses to overwrite an existing output or partial output. Rendering can take a long time and needs disk space for numbered PNGs. No audio is included. This is **not** a real-time screen recording.
 
@@ -55,11 +52,18 @@ The master exporter currently requires an opaque composition covering the entire
 
 Composition coordinates are pixels, origin top-left, +X right and +Y down. Each image is centered at the composition center plus its X/Y offsets; its own pixel dimensions are preserved. Camera framing and roll are applied around the shared camera anchor. Layer scale is a positive multiplier, layer rotation is degrees, opacity is 0–1 and depth is 0–1. Higher depth has more camera translation and dolly response. Array/order values define back-to-front stacking, independently of depth. Layer and scene IDs are stable and independent of their display names. Frame indices start at zero; track boundaries are inclusive and a track holds its end value by default.
 
-`src/camera/evaluate.ts` and `project.ts` perform pure frame-indexed evaluation and projection; `src/engine/camera-scene.ts` loads assets and applies poses in Pixi. `src/main.ts` handles editor state, local persistence and package transfer. The renderer does not import a particular story. The supplied originals and normalization script remain unchanged. The documents under `docs/` describe earlier phases and are historical; use this README for the current interface.
+`src/camera/evaluate.ts` and `project.ts` perform pure frame-indexed evaluation and projection; `src/engine/camera-scene.ts` loads assets and applies poses in Pixi. `src/main.ts` handles editor state, local persistence and package transfer. The renderer does not import a particular story. The supplied originals and normalization script remain unchanged. See the documentation index below for current guides and historical material.
+
+## Documentation index
+
+- [Camera quick guide](docs/camera-quick-guide.md) — beginner-friendly controls and examples.
+- [Camera system reference](docs/camera-system-reference.md) — implementation, projection math, validation and export.
+- [Camera core phase notes](docs/camera-core.md) — proof configuration and coverage history.
+- [Phase 0 audit](docs/camera-phase0-audit.md), [legacy preview guide](docs/legacy-project-readme.md), [storyboard](docs/storyboard.md), and [verification report](docs/verification.md) — historical context, not current editor instructions.
 
 ## Tests
 
-```powershell
+```sh
 npm test
 npx playwright install chromium
 npm run test:browser
@@ -67,8 +71,8 @@ npm run build
 npm run test:export      # needs FFmpeg and FFprobe as above
 ```
 
-The browser test exercises multiple scenes, image imports, property/track editing, deterministic pixels, local save/reload, package import and a frame export of the example. The export test creates a short synthetic MP4 and checks overwrite protection. Prior camera proof and legacy tests/scripts are retained.
+The browser test exercises multiple scenes, image imports, property/track editing, deterministic pixels, local save/reload, package import and a frame export of the example. The export test creates a short synthetic MP4 and checks overwrite protection. The retained `test:camera-browser` script targets a superseded camera-proof UI and does not pass against the current editor. `test:camera-export` and `test:production` require the historical full-render `output/camera-phase1/manifest.json`, which is not tracked; they cannot run on a fresh checkout without that evidence. These scripts are retained as historical checks, not substitutes for the current editor tests.
 
 ## Current limitations
 
-The timeline is a basic track inspector rather than a full multi-keyframe editor. It supports camera and layer X/Y, zoom/scale and rotation; opacity is static, not animated. Camera dolly is preserved for imported/example tracks but cannot yet be selected for newly created tracks in the UI. Captions, atmospheric effects, sound, project resolution/default editing, real-time WebM, a complete-story video and transitions are not yet implemented in the new editor. Asset importing is direct-to-layer rather than a reusable asset library. The MP4 CLI currently rejects uncovered/transparent frames. The historical `legacy.html` retains the earlier story-specific effects but is not a portable project editor.
+The timeline is a basic track inspector rather than a full multi-keyframe editor. It supports camera and layer X/Y, zoom/scale and rotation; opacity is static, not animated. Camera zoom tracks support Uniform and Dolly / Depth-based projection. The editor does not expose camera anchor or track limit editing. Captions, atmospheric effects, sound, project resolution/default editing, real-time WebM, a complete-story video and transitions are not yet implemented in the new editor. Asset importing is direct-to-layer rather than a reusable asset library. The MP4 CLI currently rejects uncovered/transparent frames. The historical `legacy.html` retains the earlier story-specific effects but is not a portable project editor.

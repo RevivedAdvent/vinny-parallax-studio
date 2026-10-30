@@ -1,5 +1,7 @@
 # Camera Phase 0 — audit and approval gate
 
+**Historical snapshot:** this describes the legacy implementation before the camera core and editor were built. Its proposals and approval gates are not current instructions. See the [current reference](camera-system-reference.md).
+
 **Scope:** inspection and diagnostic captures only. No application, camera, UI, asset, or exporter behavior changed. Phase 1 has not started.
 
 ## Decisions needed before implementation

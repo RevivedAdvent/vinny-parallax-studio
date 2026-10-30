@@ -1,5 +1,7 @@
 # Verification results
 
+**Historical verification of the legacy preview.** These results are not claims about the current editor or its current test scripts. See the [README](../README.md) for current test commands.
+
 ## Automated checks
 
 - `npm run build`: passed strict TypeScript checking and production bundling.

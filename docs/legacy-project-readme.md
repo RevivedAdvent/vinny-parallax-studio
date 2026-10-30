@@ -1,5 +1,7 @@
 # Vinny — A world before his time
 
+**Historical legacy-preview notes.** The current editor is described in the [README](../README.md). The old preview is available at `/legacy.html` on the development server; commands and verification claims below describe the original implementation and are not current editor instructions.
+
 A complete **PixiJS 8 + TypeScript + Vite** project that turns the supplied layered artwork into a 24-second 2.5D story scene. No backend or API keys required.
 
 ## Start the studio

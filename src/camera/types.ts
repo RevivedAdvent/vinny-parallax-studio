@@ -12,7 +12,7 @@ export interface Track {
   easing: Easing;
   intensity: number;
   limits: Limits;
-  /** Only zoom tracks use this. Uniform = optical zoom; dolly = depth-weighted push. */
+  /** Only zoom tracks use this. Uniform scales equally; dolly weights scale by depth. */
   projection?: 'uniform' | 'dolly';
   /** Additive contributions persist after endFrame unless holdAfter is false. */
   holdAfter?: boolean;
