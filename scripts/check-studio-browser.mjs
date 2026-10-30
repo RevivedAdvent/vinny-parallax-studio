@@ -1,6 +1,10 @@
 import { launch } from './runtime.mjs';
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
+const openAdvancedTrack = async page => {
+  const details = page.locator('#track-editor details.advanced-fields');
+  if (await details.evaluate(el => !el.open)) await details.locator('summary').click();
+};
 const runtime = await launch();
 try {
   const page = await runtime.browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -14,6 +18,7 @@ try {
   assert.equal(await page.locator('.nav-item.selected').textContent(), 'My New Story');
   assert.equal(await page.locator('.layer-row').count(), 0);
   assert.equal(await page.locator('#empty-view').isVisible(), true, 'blank scene shows import guidance');
+  await page.locator('[data-tab="story"]').click();
   await page.locator('#scene-duration').fill('4');
   await page.locator('#scene-duration').dispatchEvent('change');
   await page.locator('#add-scene').click();
@@ -28,6 +33,7 @@ try {
   const files = await Promise.all(['red', 'blue'].map(async (color, i) => ({
     name: ['moon.png', 'boat.png'][i], mimeType: 'image/png', buffer: Buffer.from((await makeImage(color)).split(',')[1], 'base64')
   })));
+  await page.locator('[data-tab="arrange"]').click();
   await page.locator('#asset-files').setInputFiles(files);
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 2);
   assert.equal(await page.locator('#empty-view').isVisible(), false, 'artwork hides import guidance');
@@ -80,6 +86,7 @@ try {
   assert.equal(await page.locator('[data-prop="depth"]').inputValue(), '1', 'depth uses validation clamp');
   await page.locator('[data-prop="depth"]').fill('0.7');
   await page.locator('[data-prop="depth"]').dispatchEvent('change');
+  await page.locator('[data-tab="animate"]').click();
   await page.locator('#track-property').selectOption('zoom');
   await page.locator('#new-projection').selectOption('dolly');
   await page.locator('#key-camera').click();
@@ -88,6 +95,7 @@ try {
   assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').projection), 'uniform');
   await page.locator('[data-track-slider="intensity"]').fill('50');
   assert.equal(await page.locator('[data-track="intensity"]').inputValue(), '50');
+  await openAdvancedTrack(page);
   await page.locator('[data-track="startFrame"]').fill('100');
   await page.locator('[data-track="startFrame"]').dispatchEvent('change');
   assert.ok(Number(await page.locator('[data-track="endFrame"]').inputValue()) >= 100);
@@ -99,8 +107,12 @@ try {
   await page.locator('[data-noise="seed"]').dispatchEvent('change');
   assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').noise.seed), 842);
   assert.equal(await page.evaluate(() => window.assetLoads), 0, 'track edits do not reload textures');
+  await page.locator('[data-tab="arrange"]').click();
+  await page.locator('.layer-row').filter({ hasText: 'boat' }).locator('.layer-name').click();
+  await page.locator('[data-tab="animate"]').click();
   await page.locator('#track-property').selectOption('x');
   await page.locator('#add-track').click();
+  await openAdvancedTrack(page);
   await page.locator('[data-track="endValue"]').fill('30');
   await page.locator('[data-track="endValue"]').dispatchEvent('change');
   await page.locator('#scrub').fill('42');
@@ -120,6 +132,7 @@ try {
   assert.equal(first, second, 'same frame produces identical PNG');
   await page.locator('#save').click();
   await page.waitForFunction(() => document.querySelector('#toast').textContent === 'Project saved locally');
+  await page.locator('[data-tab="export"]').click();
   const event = page.waitForEvent('download');
   await page.locator('#export-package').click();
   const download = await event;
@@ -142,9 +155,11 @@ try {
     const cameraTrack = await page.evaluate(property => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera' && t.property === property), property);
     assert.equal(cameraTrack.easing, 'seeded_noise');
     assert.deepEqual(cameraTrack.noise, {seed:1, amplitude:0, frequency:1});
+    await openAdvancedTrack(page);
     await page.locator('[data-track="endValue"]').fill('15');
     await page.locator('[data-track="endValue"]').dispatchEvent('change');
     assert.equal(await page.evaluate(id => window.cameraStudio.getState().config.tracks.find(t => t.id === id).endValue, cameraTrack.id), 15);
+    await openAdvancedTrack(page);
     await page.locator('[data-track="endFrame"]').fill('1');
     await page.locator('[data-track="endFrame"]').dispatchEvent('change');
     assert.ok(Number(await page.locator('[data-track="startFrame"]').inputValue()) <= 1);
@@ -152,6 +167,7 @@ try {
   }
   await page.locator('#scrub').fill('42');
   const editedPreview = await page.evaluate(() => window.cameraStudio.capture().png);
+  await page.locator('[data-tab="export"]').click();
   const editedEvent = page.waitForEvent('download');
   await page.locator('#master-config').click();
   const editedConfig = JSON.parse(await readFile(await (await editedEvent).path()));
@@ -189,7 +205,7 @@ try {
   assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly', 'overlapping tracks remain independently selectable');
   await page.locator('#scrub').fill('120');
   const examplePreview = await page.evaluate(() => window.cameraStudio.capture().png);
-  const configEvent=page.waitForEvent('download');await page.locator('#master-config').click();
+  await page.locator('[data-tab="export"]').click();const configEvent=page.waitForEvent('download');await page.locator('#master-config').click();
   const configDownload=await configEvent;const configBytes=await readFile(await configDownload.path());const config=JSON.parse(configBytes);
   assert.equal(config.config.layers.length,4);assert.ok(config.config.layers.every(l=>l.asset.startsWith('data:image/png')));
   const testInput={config:config.config,intensity:1};
