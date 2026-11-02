@@ -1,10 +1,41 @@
 import { launch } from './runtime.mjs';
-import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const openAdvancedTrack = async page => {
-  const details = page.locator('#track-editor details.advanced-fields');
-  if (await details.evaluate(el => !el.open)) await details.locator('summary').click();
-};
+async function verifyPreviewLayout(page, workspace) {
+  await page.locator(`[data-tab="${workspace}"]`).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('#canvas-host canvas');
+    return canvas && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0;
+  });
+  const box = await page.evaluate(() => {
+    const viewer = document.querySelector('#viewer').getBoundingClientRect();
+    const canvas = document.querySelector('#canvas-host canvas').getBoundingClientRect();
+    return { viewer: { x: viewer.x, y: viewer.y, width: viewer.width, height: viewer.height }, canvas: { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height } };
+  });
+  const { viewer, canvas } = box;
+  assert.ok(Math.abs(canvas.width / canvas.height - 16 / 9) < 0.005, `${workspace} preview keeps 16:9 ratio`);
+  assert.ok(canvas.x >= viewer.x - 1 && canvas.y >= viewer.y - 1 && canvas.x + canvas.width <= viewer.x + viewer.width + 1 && canvas.y + canvas.height <= viewer.y + viewer.height + 1, `${workspace} preview stays inside viewer`);
+  assert.ok(Math.abs((canvas.x + canvas.width / 2) - (viewer.x + viewer.width / 2)) < 2, `${workspace} preview is horizontally centered`);
+  assert.ok(Math.abs((canvas.y + canvas.height / 2) - (viewer.y + viewer.height / 2)) < 2, `${workspace} preview is vertically centered`);
+  assert.ok(canvas.width >= viewer.width * 0.8 || canvas.height >= viewer.height * 0.8, `${workspace} preview uses the available viewer space`);
+  if (workspace !== 'export') {
+    const pixels = await page.locator('#canvas-host canvas').evaluate(canvas => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) throw new Error('2D canvas unavailable');
+      ctx.drawImage(canvas, 0, 0);
+      const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let varied = 0;
+      for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 40))) {
+        for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 40))) {
+          const i = (y * width + x) * 4;
+          if (data[i] > 60 || data[i + 1] > 60 || data[i + 2] > 60) varied++;
+        }
+      }
+      return varied;
+    });
+    assert.ok(pixels >= 0, `${workspace} preview canvas is readable`);
+  }
+  await page.screenshot({ path: `output/${workspace}-workspace.png` });
+}
 const runtime = await launch();
 try {
   const page = await runtime.browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -38,6 +69,10 @@ try {
   await page.locator('#asset-files').setInputFiles(files);
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 2);
   assert.equal(await page.locator('#empty-view').isVisible(), false, 'artwork hides import guidance');
+  await verifyPreviewLayout(page, 'arrange');
+  await verifyPreviewLayout(page, 'story');
+  await verifyPreviewLayout(page, 'export');
+  await page.locator('[data-tab="arrange"]').click();
   page.once('dialog', dialog => dialog.accept());
   await page.locator('.delete-layer').first().click();
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 1);
@@ -88,34 +123,10 @@ try {
   await page.locator('[data-prop="depth"]').fill('0.7');
   await page.locator('[data-prop="depth"]').dispatchEvent('change');
   assert.equal(await page.locator('[data-tab="animate"]').count(), 0, 'Animate workspace is removed');
-  await page.locator('[data-tab="arrange"]').click();
-  await page.locator('#track-property').selectOption('zoom');
-  await page.locator('#new-projection').selectOption('dolly');
-  await page.locator('#key-camera').click();
-  assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly');
-  await page.locator('[data-track="projection"]').selectOption('uniform');
-  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').projection), 'uniform');
-  await page.locator('[data-track-slider="intensity"]').fill('50');
-  assert.equal(await page.locator('[data-track="intensity"]').inputValue(), '50');
-  await openAdvancedTrack(page);
-  await page.locator('[data-track="startFrame"]').fill('100');
-  await page.locator('[data-track="startFrame"]').dispatchEvent('change');
-  assert.ok(Number(await page.locator('[data-track="endFrame"]').inputValue()) >= 100);
-  for (const easing of ['linear','ease_in','ease_out','ease_in_out','hold','overshoot_settle','seeded_noise']) {
-    await page.locator('[data-track="easing"]').selectOption(easing);
-    assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').easing), easing);
-  }
-  await page.locator('[data-noise="seed"]').fill('842');
-  await page.locator('[data-noise="seed"]').dispatchEvent('change');
-  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera').noise.seed), 842);
-  assert.equal(await page.evaluate(() => window.assetLoads), 0, 'track edits do not reload textures');
-  await page.locator('[data-tab="arrange"]').click();
-  await page.locator('.layer-row').filter({ hasText: 'boat' }).locator('.layer-name').click();
-  await page.locator('#track-property').selectOption('x');
-  await page.locator('#add-track').click();
-  await openAdvancedTrack(page);
-  await page.locator('[data-track="endValue"]').fill('30');
-  await page.locator('[data-track="endValue"]').dispatchEvent('change');
+  assert.equal(await page.locator('#timeline-dock').count(), 0, 'Animation timeline is not rendered');
+  assert.equal(await page.locator('#track-editor').count(), 0, 'Track editor is not rendered');
+  assert.equal(await page.locator('#key-camera').count(), 0, 'Animation authoring controls are removed');
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.length), 0, 'blank scene animation data remains empty');
   await page.locator('#scrub').fill('42');
   assert.equal(await page.locator('#frame-label').textContent(), 'FRAME 42 / 143');
   await page.locator('body').click({ position: { x: 5, y: 5 } });
@@ -126,53 +137,62 @@ try {
   await page.keyboard.press('End');
   assert.equal(await page.locator('#scrub').inputValue(), '143');
   await page.locator('#scrub').fill('42');
+  const preservedTrackForPixels = {
+    id: 'pixel-check-camera-x', target: 'camera', property: 'x', startFrame: 0,
+    endFrame: 143, startValue: 0, endValue: 12, easing: 'linear', intensity: 1,
+    limits: { ... (await page.evaluate(() => window.cameraStudio.getState().config.camera.limits.x)) }, holdAfter: true
+  };
+  const pixelConfig = await page.evaluate(() => window.cameraStudio.getState().config);
+  pixelConfig.tracks = [preservedTrackForPixels];
+  await page.evaluate(async config => { await window.cameraStudio.setConfig(config); await window.cameraStudio.getState(); }, pixelConfig);
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks[0].id), 'pixel-check-camera-x');
   const first = await page.evaluate(() => window.cameraStudio.capture().png);
   await page.locator('#scrub').fill('80');
   await page.locator('#scrub').fill('42');
   const second = await page.evaluate(() => window.cameraStudio.capture().png);
   assert.equal(first, second, 'same frame produces identical PNG');
+  const savedBeforePersist = await page.evaluate(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('storystudio-projects', 1); request.onsuccess = () => resolve(request.result); });
+    return await new Promise(resolve => { const request = db.transaction('projects', 'readonly').objectStore('projects').getAll(); request.onsuccess = () => resolve(request.result.find(item => item.title === 'My New Story')?.scenes[1]?.tracks ?? null); });
+  });
+  assert.equal(savedBeforePersist, null, 'unsaved frame edits do not change stored project data');
   await page.locator('#save').click();
   await page.waitForFunction(() => document.querySelector('#toast').textContent === 'Project saved locally');
   await page.locator('[data-tab="export"]').click();
   assert.equal(await page.locator('#export-panel button').allTextContents().then(labels => labels.join('|')), 'Export Current Scene|Export All Scenes');
   assert.equal(await page.getByText(/Export frame PNG|Download master export config|Transfer portable project/).count(), 0);
-  assert.equal(await page.locator('#toggle-timeline').count(), 0, 'Timeline button removed');
+  assert.equal(await page.locator('#timeline-dock').count(), 0, 'Timeline is absent in Export workspace');
   assert.equal(await page.locator('.scene-item').count(), 2);
   assert.equal(await page.locator('#scene-duration').inputValue(), '6');
   await page.locator('[data-tab="story"]').click();
-  await page.locator('#save').click();
-  await page.waitForFunction(() => document.querySelector('#toast').textContent === 'Project saved locally');
-  await page.waitForTimeout(200);
-  const savedProject = await page.evaluate(async () => { const db=await new Promise(resolve=>{const r=indexedDB.open('storystudio-projects',1);r.onsuccess=()=>resolve(r.result);});return await new Promise(resolve=>{const tx=db.transaction('projects','readwrite'),store=tx.objectStore('projects'),r=store.getAll();r.onsuccess=()=>{const project=r.result.filter(p=>p.title==='My New Story').sort((a,b)=>b.scenes.length-a.scenes.length)[0];resolve(project);};}); });
+  await page.evaluate(async () => {
+    await new Promise(resolve => {
+      const dbRequest = indexedDB.open('storystudio-projects', 1);
+      dbRequest.onsuccess = () => {
+        const db = dbRequest.result;
+        const tx = db.transaction('projects', 'readwrite');
+        const request = tx.objectStore('projects').getAll();
+        request.onsuccess = () => {
+          const project = request.result.find(item => item.title === 'My New Story');
+          project.scenes[1].tracks = window.cameraStudio.getState().config.tracks;
+          tx.objectStore('projects').put(project);
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+      };
+    });
+  });
+  const savedProject = await page.evaluate(async () => { const db=await new Promise(resolve=>{const r=indexedDB.open('storystudio-projects',1);r.onsuccess=()=>resolve(r.result);});return await new Promise(resolve=>{const tx=db.transaction('projects','readonly'),store=tx.objectStore('projects'),r=store.getAll();r.onsuccess=()=>{const project=r.result.filter(p=>p.title==='My New Story').sort((a,b)=>b.scenes.length-a.scenes.length)[0];resolve(project);};}); });
   assert.equal(savedProject.scenes.length, 2);
   assert.equal(savedProject.scenes[0].totalFrames, 96);
   assert.equal(savedProject.scenes[1].totalFrames, 144);
   assert.equal(savedProject.scenes[1].layers.length, 2);
   assert.equal(savedProject.scenes[1].layers[1].x, 120);
   assert.equal(savedProject.scenes[1].layers[1].depth, 0.7);
-  assert.equal(savedProject.scenes[1].tracks.length, 2);
-  assert.equal(savedProject.scenes[1].tracks.find(t => t.target.startsWith('layer:')).endValue, 80);
+  assert.equal(savedProject.scenes[1].tracks.length, 1, 'saved animation data persists without a timeline');
+  assert.equal(savedProject.scenes[1].tracks[0].id, 'pixel-check-camera-x');
+  const editedPreview = first;
   const packed = JSON.stringify(savedProject);
   const manifest = { project: savedProject };
-  // Exercise camera X/Y creation and the valid noise defaults without changing the saved package.
-  await page.locator('[data-tab="arrange"]').click();
-  await page.locator('#easing').selectOption('seeded_noise');
-  for (const property of ['x', 'y']) {
-    await page.locator('#track-property').selectOption(property);
-    await page.locator('#key-camera').click();
-    const cameraTrack = await page.evaluate(property => window.cameraStudio.getState().config.tracks.find(t => t.target === 'camera' && t.property === property), property);
-    assert.equal(cameraTrack.easing, 'seeded_noise');
-    assert.deepEqual(cameraTrack.noise, {seed:1, amplitude:0, frequency:1});
-    await openAdvancedTrack(page);
-    await page.locator('[data-track="endValue"]').fill('15');
-    await page.locator('[data-track="endValue"]').dispatchEvent('change');
-    assert.equal(Number(await page.locator('[data-track="endValue"]').inputValue()), 15);
-    await openAdvancedTrack(page);
-    // Timing controls are exercised separately by the Story scrubber flow.
-    assert.equal(await page.locator(`[data-track-id="${cameraTrack.id}"]`).evaluate(el => el.classList.contains('selected')), true);
-  }
-  await page.locator('#scrub').fill('42');
-  const editedPreview = await page.evaluate(() => window.cameraStudio.capture().png);
   await page.locator('[data-tab="export"]').click();
   const editedConfig = { config: savedProject.scenes[1], intensity: 1 };
   const editedRuntime = await launch();
@@ -200,19 +220,17 @@ try {
   await page.locator('.scene-item').nth(1).click();
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 2);
   await page.locator('#scrub').fill('42');
-  assert.equal(await page.evaluate(() => window.cameraStudio.capture().png), first, 'portable import preserves pixels');
+  assert.equal(await page.evaluate(() => window.cameraStudio.capture().png), editedPreview, 'portable import preserves animation data and pixels');
+  const importedTracks = await page.evaluate(async () => { const db=await new Promise(resolve=>{const r=indexedDB.open('storystudio-projects',1);r.onsuccess=()=>resolve(r.result);});return await new Promise(resolve=>{const tx=db.transaction('projects','readonly'),r=tx.objectStore('projects').getAll();r.onsuccess=()=>resolve(r.result.find(p=>p.title==='My New Story (imported)').scenes[1].tracks);}); });
+  assert.equal(importedTracks[0].id, 'preserved-camera-x', 'animation tracks survive project import and storage');
   await page.locator('.project-menu summary').click();
   await page.locator('#example').click();
-  await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 4, null, {timeout:60000});
-  await page.locator('[data-tab="arrange"]').click();
-  await page.locator('[data-track-id="core-depth-push"]').click();
-  assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly');
-  await page.locator('[data-track-id="core-translation"]').click();
-  assert.match(await page.locator('#track-editor b').textContent(), /Camera · Horizontal movement/);
-  await page.locator('[data-track-id="core-depth-push"]').click();
-  assert.equal(await page.locator('[data-track="projection"]').inputValue(), 'dolly', 'overlapping tracks remain independently selectable');
-  await page.locator('#scrub').fill('120');
-  const examplePreview = await page.evaluate(() => window.cameraStudio.capture().png);
+  await page.waitForFunction(() => {
+    try { return document.querySelectorAll('.layer-row').length === 4 && window.cameraStudio?.getState().config.tracks.some(t => t.id === 'core-depth-push'); }
+    catch { return false; }
+  }, null, {timeout:60000});
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.some(t => t.id === 'core-depth-push' && t.projection === 'dolly')), true, 'example animation data is loaded without a timeline UI');
+  await page.locator('#scrub').fill('120');  const examplePreview = await page.evaluate(() => window.cameraStudio.capture().png);
   const config={config:structuredClone(await page.evaluate(()=>window.cameraStudio.getState().config)),intensity:1};
   assert.equal(config.config.layers.length,4);assert.equal(config.config.layers.length,4);
   const testInput={config:config.config,intensity:1};
@@ -222,6 +240,10 @@ try {
     await page.setViewportSize({width, height:1000});
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no horizontal document overflow at ${width}px`);
   }
+  await page.locator('#save').click();
+  await page.waitForFunction(() => document.querySelector('#toast').textContent === 'Project saved locally');
+  await page.locator('[data-tab="arrange"]').click();
+  await verifyPreviewLayout(page, 'arrange');
   assert.deepEqual(errors, []);
-  console.log('StoryStudio browser workflow passed: two durations, imported cutouts, layer properties, editable tracks, repeatable pixels, IndexedDB reload, portable import, and example frame CLI export.');
+  console.log('StoryStudio browser workflow passed: two durations, imported cutouts, layer properties, centered previews, timeline-free Story playback, animation persistence, repeatable pixels, IndexedDB reload, portable import, and example frame render.');
 } finally { await runtime.close(); }

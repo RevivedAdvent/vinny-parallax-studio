@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { resolve, dirname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launchCamera } from './camera-runtime.mjs';
-import { validateProject } from '../src/studio/project.ts';
 
 const safe = value => String(value || 'video').normalize('NFKD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100) || 'video';
 export async function exportStoryVideo({ project: raw, sceneId, output }) {
@@ -28,14 +27,18 @@ export async function exportStoryVideo({ project: raw, sceneId, output }) {
   let runtime;
   try {
     for (let i = 0; i < scenes.length; i++) {
-      const scene = structuredClone(scenes[i]);
+    const scene = structuredClone(scenes[i]);
+      const sourceWidth=scene.width,sourceHeight=scene.height;
       scene.width = width; scene.height = height; scene.fps = fps;
       scene.totalFrames = counts[i]; scene.tracks = [];
+      // Scale the composition coordinate space uniformly to fit the 16:9 output.
+      // Each layer keeps its own transform and stacking order; no per-layer stretching.
+      const scale=Math.max(width/sourceWidth,height/sourceHeight),offsetX=(width-sourceWidth*scale)/2,offsetY=(height-sourceHeight*scale)/2;
+      scene.layers.forEach(layer => { layer.x=(layer.x??0)*scale+offsetX; layer.y=(layer.y??0)*scale+offsetY; layer.scale=(layer.scale??1)*scale; });
       scene.camera.baseZoom = 1;
       scene.camera.limits.zoom = { min: 1, max: 1 };
       scene.camera.limits.x = { min: 0, max: 0 }; scene.camera.limits.y = { min: 0, max: 0 }; scene.camera.limits.roll = { min: 0, max: 0 };
       scene.camera.anchor = { x: width / 2, y: height / 2 };
-      scene.layers.forEach(layer => { layer.x = 0; layer.y = 0; layer.scale = 1; layer.rotation = 0; });
       const input = { config: scene, intensity: 0 };
       runtime = await launchCamera(input);
       await runtime.page.evaluate(() => window.cameraStudio.renderFrame(0));

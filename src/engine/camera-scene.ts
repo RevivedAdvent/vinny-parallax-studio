@@ -8,7 +8,7 @@ export interface Coverage { uncoveredPixels: number; fullyTransparentPixels: num
 export async function createCameraScene(host: HTMLElement, input: CameraSceneConfig) {
   let core = compileCamera(input), config = core.config();
   const app = new Application();
-  await app.init({ width:config.width,height:config.height,resolution:1,antialias:true,autoStart:false,preference:'webgl',preserveDrawingBuffer:true,background:'#000000',backgroundAlpha:0 });
+  await app.init({ width:config.width,height:config.height,resolution:1,antialias:true,autoStart:false,preference:'webgl',preserveDrawingBuffer:true,background:'#000000',backgroundAlpha:1 });
   app.canvas.setAttribute('aria-label','Illustrated story scene preview'); app.canvas.setAttribute('role','img'); host.appendChild(app.canvas);
   const resizeObserver = new ResizeObserver(() => { const bounds=host.getBoundingClientRect(); if(!bounds.width||!bounds.height)return;const scale=Math.min(bounds.width/config.width,bounds.height/config.height);app.canvas.style.width=`${config.width*scale}px`;app.canvas.style.height=`${config.height*scale}px`; });resizeObserver.observe(host);
   const world = new Container(); app.stage.addChild(world);
@@ -34,7 +34,7 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   }
   function capture(includePNG=true, matte=true):{png?:string;coverage:Coverage}{const ctx=context!;ctx.clearRect(0,0,config.width,config.height);ctx.drawImage(app.canvas,0,0);const pixels=ctx.getImageData(0,0,config.width,config.height).data;let count=0,transparent=0,minAlpha=255,minX=config.width,minY=config.height,maxX=-1,maxY=-1;
     for(let i=3;i<pixels.length;i+=4){const a=pixels[i];if(a<255){count++;if(a===0)transparent++;minAlpha=Math.min(minAlpha,a);const p=(i-3)/4,x=p%config.width,y=Math.floor(p/config.width);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}}
-    const coverage={uncoveredPixels:count,fullyTransparentPixels:transparent,minAlpha,bounds:count?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null};if(!includePNG)return{coverage};if(matte){ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#ff00ff';ctx.fillRect(0,0,config.width,config.height);ctx.globalCompositeOperation='source-over';}return{png:readback.toDataURL('image/png'),coverage};}
+    const coverage={uncoveredPixels:count,fullyTransparentPixels:transparent,minAlpha,bounds:count?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null};if(!includePNG)return{coverage};if(matte){ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#000000';ctx.fillRect(0,0,config.width,config.height);ctx.globalCompositeOperation='source-over';}return{png:readback.toDataURL('image/png'),coverage};}
   async function setConfig(input:CameraSceneConfig){const candidate=compileCamera(input),next=candidate.config();
     if(next.width!==config.width||next.height!==config.height){throw new Error('Scene composition size changes require recreating renderer');}
     const changed=next.layers.length!==config.layers.length||next.layers.some((l,i)=>l.id!==config.layers[i].id||l.asset!==config.layers[i].asset);
