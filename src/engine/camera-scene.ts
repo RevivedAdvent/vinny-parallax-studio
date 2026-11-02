@@ -10,6 +10,7 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   const app = new Application();
   await app.init({ width:config.width,height:config.height,resolution:1,antialias:true,autoStart:false,preference:'webgl',preserveDrawingBuffer:true,background:'#000000',backgroundAlpha:0 });
   app.canvas.setAttribute('aria-label','Illustrated story scene preview'); app.canvas.setAttribute('role','img'); host.appendChild(app.canvas);
+  const resizeObserver = new ResizeObserver(() => { const bounds=host.getBoundingClientRect(); if(!bounds.width||!bounds.height)return;const scale=Math.min(bounds.width/config.width,bounds.height/config.height);app.canvas.style.width=`${config.width*scale}px`;app.canvas.style.height=`${config.height*scale}px`; });resizeObserver.observe(host);
   const world = new Container(); app.stage.addChild(world);
   let sprites: Sprite[] = [];
   async function loadLayers(layers: CameraSceneConfig['layers']) {
@@ -45,6 +46,6 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
     setIntensity(value:number){intensity=clamp(finite(value,'intensity'),0,1);renderFrame(frame);},
     setVisible(id:string,visible:boolean){const index=config.layers.findIndex(l=>l.id===id);if(index<0)throw new Error(`Unknown layer ${id}`);config.layers[index].visible=visible;sprites[index].visible=visible;renderFrame(frame);},
     getState:()=>({frame,intensity,state:structuredClone(state),transforms:structuredClone(transforms),visible:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].visible])),config:structuredClone(config)}),
-    destroy(){app.destroy(true,{children:true});}};
+    destroy(){resizeObserver.disconnect();app.destroy(true,{children:true});}};
 }
 export type CameraScene=Awaited<ReturnType<typeof createCameraScene>>;
