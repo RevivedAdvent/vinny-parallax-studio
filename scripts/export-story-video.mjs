@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { resolve, dirname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launchCamera } from './camera-runtime.mjs';
+import { resolveLayerAsset, AssetError } from './export-assets.mjs';
 
 const safe = value => String(value || 'video').normalize('NFKD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100) || 'video';
-export async function exportStoryVideo({ project: raw, sceneId, output }) {
+export async function exportStoryVideo({ project: raw, sceneId, output, onPhase = () => {} }) {
   const project = structuredClone(raw);
   if (!project || !Array.isArray(project.scenes)) throw new Error('Invalid Story project');
+  for (const scene of project.scenes) if (!scene || !scene.camera || !scene.camera.limits || !Array.isArray(scene.layers) || !Array.isArray(scene.tracks)) throw new Error('Story project scene is missing camera or layer data');
   const selected = project.scenes.find(s => s.id === sceneId);
   if (sceneId && !selected) throw new Error('Selected scene not found');
   const scenes = selected ? [selected] : project.scenes;
@@ -21,13 +23,30 @@ export async function exportStoryVideo({ project: raw, sceneId, output }) {
   const encoder = encoders.stdout.includes('libx264') ? 'libx264' : encoders.stdout.includes('libopenh264') ? 'libopenh264' : null;
   if (!encoder) throw new Error('FFmpeg must include libx264 or libopenh264 for H.264 MP4 export');
   if (spawnSync(ffprobe, ['-version']).status !== 0) throw new Error('FFprobe unavailable; install FFprobe or set FFPROBE_PATH');
+  onPhase('preparing');
+  // Resolve every layer's artwork before any browser is launched. A bad asset fails here,
+  // naming the scene and layer, instead of producing a blank or partial video.
+  onPhase('resolving');
+  const resolvedScenes = [];
+  for (const scene of scenes) {
+    const copy = structuredClone(scene);
+    for (const layer of copy.layers) {
+      try { layer.asset = await resolveLayerAsset(layer); }
+      catch (error) {
+        if (error instanceof AssetError) throw new AssetError(`${scene.title ?? scene.id} / ${error.layer}`, error.reason);
+        throw error;
+      }
+    }
+    resolvedScenes.push(copy);
+  }
   const directory = await mkdtemp(resolve(tmpdir(), 'vinny-export-'));
   const destination = resolve(output || resolve('output', `${safe(project.title)}_${selected ? safe(selected.title) : 'full-video'}.mp4`));
   const temporary = resolve(dirname(destination), `.${basename(destination)}.${process.pid}.partial.mp4`);
   let runtime;
   try {
     for (let i = 0; i < scenes.length; i++) {
-    const scene = structuredClone(scenes[i]);
+      onPhase('rendering', i + 1, scenes.length);
+      const scene = resolvedScenes[i];
       const sourceWidth=scene.width,sourceHeight=scene.height;
       scene.width = width; scene.height = height; scene.fps = fps;
       scene.totalFrames = counts[i]; scene.tracks = [];
@@ -46,17 +65,20 @@ export async function exportStoryVideo({ project: raw, sceneId, output }) {
       await writeFile(resolve(directory, `scene-${i}.png`), Buffer.from(png.split(',')[1], 'base64'));
       await runtime.close(); runtime = undefined;
     }
+    onPhase('encoding');
     const args = ['-hide_banner', '-loglevel', 'error', '-y'];
     for (let i = 0; i < scenes.length; i++) args.push('-loop', '1', '-framerate', String(fps), '-i', resolve(directory, `scene-${i}.png`));
     const filters = scenes.map((_, i) => `[${i}:v]scale=${width}:${height},setsar=1,format=yuv420p,trim=end_frame=${counts[i]},setpts=PTS-STARTPTS[v${i}]`);
     filters.push(scenes.map((_, i) => `[v${i}]`).join('') + `concat=n=${scenes.length}:v=1:a=0[outv]`);
     args.push('-filter_complex', filters.join(';'), '-map', '[outv]', '-frames:v', String(counts.reduce((a, b) => a + b, 0)), '-r', String(fps), '-fps_mode', 'cfr', '-an', '-c:v', encoder, ...(encoder === 'libx264' ? ['-preset', 'veryfast', '-crf', '18'] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', temporary);
     await new Promise((resolvePromise, reject) => { const child = spawn(ffmpeg, args, { stdio: 'inherit' }); child.on('error', reject); child.on('close', code => code === 0 ? resolvePromise() : reject(new Error(`FFmpeg exited with code ${code}`))); });
+    onPhase('verifying');
     const probe = spawnSync(ffprobe, ['-v', 'error', '-count_frames', '-show_entries', 'stream=codec_name,width,height,avg_frame_rate,nb_read_frames:format=duration', '-of', 'json', temporary], { encoding: 'utf8' });
     if (probe.status !== 0) throw new Error(`FFprobe verification failed: ${probe.stderr}`);
     const metadata = JSON.parse(probe.stdout), stream = metadata.streams[0], frames = counts.reduce((a, b) => a + b, 0);
     if (stream.codec_name !== 'h264' || stream.width !== width || stream.height !== height || stream.avg_frame_rate !== '60/1' || Number(stream.nb_read_frames) !== frames || Math.abs(Number(metadata.format.duration) - frames / fps) > 0.001) throw new Error('Encoded MP4 metadata does not match required dimensions, frame rate or duration');
     await rename(temporary, destination);
+    onPhase('ready');
     return { output: destination, metadata, frames, duration: frames / fps };
   } finally { if (runtime) await runtime.close(); await rm(directory, { recursive: true, force: true }); await rm(temporary, { force: true }); }
 }

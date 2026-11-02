@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "node scripts/dev-studio.mjs",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:studio": "node scripts/dev-studio.mjs",
     "export:server": "node scripts/export-server.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
@@ -13,12 +15,15 @@
     "test:camera-export": "node scripts/check-camera-export.mjs",
     "test:production": "node scripts/check-camera-production.mjs",
     "test:browser": "node scripts/check-studio-browser.mjs",
+    "test:export-service": "node --test tests/export-service.test.mjs",
+    "test:export-ui": "node scripts/check-export-ui.mjs",
     "test:export": "node scripts/check-master-export.mjs",
     "normalize:layers": "python3 scripts/normalize-layers.py",
     "render:frames": "node scripts/render-frames.mjs",
     "lab:basic": "node scripts/render-camera-lab-basic.mjs",
     "lab:basic-encode": "node scripts/export-camera-lab-basic.mjs",
-    "export:video": "node scripts/export-video.mjs"
+    "export:video": "node scripts/export-video.mjs",
+    "test:real-project": "node scripts/check-real-project-export.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.22.0"

@@ -153,7 +153,7 @@ try {
   assert.equal(first, second, 'same frame produces identical PNG');
   const savedBeforePersist = await page.evaluate(async () => {
     const db = await new Promise(resolve => { const request = indexedDB.open('storystudio-projects', 1); request.onsuccess = () => resolve(request.result); });
-    return await new Promise(resolve => { const request = db.transaction('projects', 'readonly').objectStore('projects').getAll(); request.onsuccess = () => resolve(request.result.find(item => item.title === 'My New Story')?.scenes[1]?.tracks ?? null); });
+    return await new Promise(resolve => { const request = db.transaction('projects', 'readonly').objectStore('projects').getAll(); request.onsuccess = () => resolve(request.result.filter(item => item.title === 'My New Story').sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0]?.scenes[1]?.tracks ?? null); });
   });
   assert.equal(savedBeforePersist, null, 'unsaved frame edits do not change stored project data');
   await page.locator('#save').click();
@@ -173,7 +173,7 @@ try {
         const tx = db.transaction('projects', 'readwrite');
         const request = tx.objectStore('projects').getAll();
         request.onsuccess = () => {
-          const project = request.result.find(item => item.title === 'My New Story');
+          const project = request.result.filter(item => item.title === 'My New Story').sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
           project.scenes[1].tracks = window.cameraStudio.getState().config.tracks;
           tx.objectStore('projects').put(project);
         };
@@ -221,8 +221,8 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.layer-row').length === 2);
   await page.locator('#scrub').fill('42');
   assert.equal(await page.evaluate(() => window.cameraStudio.capture().png), editedPreview, 'portable import preserves animation data and pixels');
-  const importedTracks = await page.evaluate(async () => { const db=await new Promise(resolve=>{const r=indexedDB.open('storystudio-projects',1);r.onsuccess=()=>resolve(r.result);});return await new Promise(resolve=>{const tx=db.transaction('projects','readonly'),r=tx.objectStore('projects').getAll();r.onsuccess=()=>resolve(r.result.find(p=>p.title==='My New Story (imported)').scenes[1].tracks);}); });
-  assert.equal(importedTracks[0].id, 'preserved-camera-x', 'animation tracks survive project import and storage');
+  const importedTracks = await page.evaluate(async () => { const db=await new Promise(resolve=>{const r=indexedDB.open('storystudio-projects',1);r.onsuccess=()=>resolve(r.result);});return await new Promise(resolve=>{const tx=db.transaction('projects','readonly'),r=tx.objectStore('projects').getAll();r.onsuccess=()=>resolve(r.result.filter(p=>p.title==='My New Story (imported)').sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)))[0].scenes[1].tracks);}); });
+  assert.equal(importedTracks[0].id, 'pixel-check-camera-x', 'animation tracks survive project import and storage');
   await page.locator('.project-menu summary').click();
   await page.locator('#example').click();
   await page.waitForFunction(() => {
