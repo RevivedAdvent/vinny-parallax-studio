@@ -5,7 +5,7 @@ import { compileCamera } from '../src/camera/evaluate.ts';
 import { projectLayers } from '../src/camera/project.ts';
 import { validateScene } from '../src/camera/validate.ts';
 import { effectTrack, putKeyframe, deleteKeyframe, snapSecond, secondsToFrame, sceneDuration, legacyKeyframes, keyframeValue, effectDuration, editEffectTiming } from '../src/camera/animation.ts';
-const make = () => { const s=createScene('Animation',10);s.layers=Array.from({length:4},(_,i)=>({id:`l${i}`,name:`Art ${i}`,asset:'/art.png',depth:i/3}));return s; };
+const make = () => { const s=createScene('Animation',10,1920,1080,24);s.layers=Array.from({length:4},(_,i)=>({id:`l${i}`,name:`Art ${i}`,asset:'/art.png',depth:i/3}));return s; };
 const effect = (s, overrides={}) => effectTrack({id:'effect',target:'camera',property:'x',start:2,duration:3,from:0,to:120,easing:'linear',intensity:1,...overrides},s);
 const near = (a,b) => assert.ok(Math.abs(a-b)<1e-9, `${a} != ${b}`);
 test('ordered creation, replacement, deletion, snapping and original timebase',()=>{

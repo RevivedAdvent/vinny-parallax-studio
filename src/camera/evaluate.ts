@@ -2,7 +2,8 @@ import type { CameraSceneConfig, CameraState, Pose, Track } from './types.ts';
 import { clamp, drift, ease, finite } from './easing.ts';
 import { channel, legacyChannel, keyframeValue, neutralValue, propertyBounds } from './animation.ts';
 import { validateScene } from './validate.ts';
-import { evaluateMoves } from './moves.ts';
+import { applyReveals, evaluateMoves } from './moves.ts';
+import { projectLayers } from './project.ts';
 
 const neutralPose = (): Pose => ({ x: 0, y: 0, zoom: 1, roll: 0, opacity: 1 });
 export function trackValue(track: Track, frame: number, fps: number) {
@@ -28,7 +29,7 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
   if (!Number.isFinite(seconds) || seconds < 0 || seconds > config.totalFrames / config.fps) throw new Error('Time outside scene');
   const frame = seconds * config.fps;
   const amount = clamp(finite(intensity, 'intensity'), 0, 1);
-  const result: CameraState = { ...neutralPose(), frame, uniformDelta: 0, dollyDelta: 0, compositeCamera: evaluateMoves(config, seconds, amount),
+  const result: CameraState = { ...neutralPose(), frame, uniformDelta: 0, dollyDelta: 0, compositeCamera: { x: 0, y: 0, scale: 1 },
     layers: Object.fromEntries(config.layers.map(l => [l.id, neutralPose()])) };
   const authored = new Set((config.animationTracks ?? []).filter(track => track.enabled !== false).map(channel));
   for (const track of config.tracks) {
@@ -70,6 +71,10 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     result.uniformDelta *= correction; result.dollyDelta *= correction;
   }
   result.zoom = bounded;
+  // Tracking measures targets before the composite camera, so it needs the layer state first.
+  const targets = projectLayers(config, result);
+  result.compositeCamera = evaluateMoves(config, seconds, amount, targets);
+  applyReveals(config, result.layers, seconds, amount);
   for (const [id, pose] of Object.entries(result.layers)) {
     for (const p of ['x', 'y', 'zoom'] as const) {
       const limits = authored.has(`layer:${id}/${p}`) ? propertyBounds(config, `layer:${id}`, p) : bounds[p];

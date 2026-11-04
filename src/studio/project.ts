@@ -16,9 +16,9 @@ const id = () => crypto.randomUUID();
 export function createProject(title: string): StoryProject {
   const now = new Date().toISOString();
   return { schemaVersion: 1, id: id(), title: title.trim() || 'Untitled Story', createdAt: now, updatedAt: now,
-    settings: { width: 1920, height: 1080, fps: 24 }, scenes: [createScene('Scene 1', 10)] };
+    settings: { width: 1920, height: 1080, fps: 60 }, scenes: [createScene('Scene 1', 10)] };
 }
-export function createScene(title: string, durationSeconds = 10, width = 1920, height = 1080, fps = 24): CameraSceneConfig {
+export function createScene(title: string, durationSeconds = 10, width = 1920, height = 1080, fps = 60): CameraSceneConfig {
   const totalFrames = Math.max(1, Math.round(durationSeconds * fps));
   return { version: 1, id: id(), title, width, height, fps, totalFrames, layers: [], tracks: [],
     camera: { baseZoom: 1, maxRoll: 180, anchor: { x: width / 2, y: height / 2 },

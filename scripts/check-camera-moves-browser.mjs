@@ -56,7 +56,7 @@ try {
  await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
  await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();assert.equal(result.config.cameraMoves.length,4);assert.equal(result.config.cameraMoves.find(m=>m.type==='pan').x,300);
  await page.locator('[data-tab="story"]').click();await page.locator('#scene-duration').fill('3');await page.locator('#scene-duration').dispatchEvent('change');
- assert.equal((await state()).config.totalFrames,240,'cannot shorten past movement endpoint');
+ assert.equal((await state()).config.totalFrames,600,'cannot shorten past movement endpoint');
  await page.locator('[data-tab="animate"]').click();await page.locator('#camera-basic-moves summary').click();await page.locator('[data-preset="static"]').click();await page.locator('#camera-reset').click();
  await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===0);
  await page.evaluate(()=>window.cameraStudio.renderTime(5));result=await state();assert.deepEqual(result.state.compositeCamera,{x:0,y:0,scale:1});assert.equal(result.config.layers.length,2);

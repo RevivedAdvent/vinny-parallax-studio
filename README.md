@@ -15,7 +15,7 @@ Open the printed local URL. Projects are saved in the browser's IndexedDB; clear
 
 ## Workflow
 
-1. Create a project and set scene duration in **Story**.
+1. Create a project and set scene duration in **Story**. New projects and scenes default to 60 FPS; existing scenes retain their frame rate.
 2. Import PNG, JPEG or WebP artwork in **Arrange**. Adjust layer position, scale, rotation, opacity and order.
 3. In **Camera Movements**, expand **Basic Cinematic Moves**, choose a move and set its timing and coordinates or scale. Use **Coordinate picker** to find a scene point and apply it to a move. Camera moves affect the whole composition independently of layer depth; new moves have constant-speed interpolation.
 4. Preview with Play or the scrubber. In **Timeline**, view and edit movement start/end times, or edit and delete moves. Click **Save**.

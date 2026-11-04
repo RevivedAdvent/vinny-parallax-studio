@@ -1,13 +1,19 @@
 import type { CameraSceneConfig } from '../camera/types.ts';
 import { sceneDuration } from '../camera/animation.ts';
-import { moveNames, type CameraMove, type CameraMoveType } from '../camera/moves.ts';
+import { moveNames, basicMoves, spatialMoves, type CameraMove, type CameraMoveType } from '../camera/moves.ts';
 import { renderTimeline, updateTimelineTime } from './timeline.ts';
 import { scenePoint, type Point, type View } from './coordinates.ts';
 
+// Moves whose X/Y fields are screen or target coordinates, so a picked point can fill them.
+const pickable:(CameraMoveType|'static')[]=['push','pan','tilt','truck','pedestal','diagonal','crane','tracking'];
+const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const descriptions: Record<CameraMoveType,string> = {
   push:'Move toward a point in the scene.', pull:'Move back to reveal more of the scene.',
   pan:'Move the camera horizontally to an X coordinate.', tilt:'Move the camera vertically to a Y coordinate.',
   zoom:'Change magnification around the center without shifting the viewpoint.',
+  truck:'Slide the viewpoint sideways to a chosen X position.', pedestal:'Move the viewpoint up or down while keeping the framing level.',
+  diagonal:'Move the viewpoint to a chosen X and Y in one continuous path.', crane:'Rise or descend to reveal more of the scene above or below.',
+  tracking:'Keep a chosen layer near a set screen position as the viewpoint moves.', reveal:'Slide selected foreground layers aside to uncover the artwork behind them.',
 };
 
 export function createAnimateWorkspace(options: {
@@ -25,10 +31,12 @@ export function createAnimateWorkspace(options: {
     if(sceneId!==options.getSceneKey()){sceneId=options.getSceneKey();selected='';preset='push';picked=null;stopPicker();}
     const move=cfg.cameraMoves?.find(m=>m.id===selected);
     if(selected&&!move)selected='';
+    const card=(id:CameraMoveType)=>`<button data-preset="${id}" class="camera-card ${preset===id?'selected':''}"><b>${moveNames[id]}</b><span>${descriptions[id]}</span></button>`;
     $('animation-targets').innerHTML=`<div class="camera-catalogue">
       <button data-preset="static" class="camera-card ${preset==='static'?'selected':''}"><b>Static / locked-off</b><span>No camera movement.</span></button>
-      ${(Object.keys(moveNames) as CameraMoveType[]).map(id=>`<button data-preset="${id}" class="camera-card ${preset===id?'selected':''}"><b>${moveNames[id]}</b><span>${descriptions[id]}</span></button>`).join('')}</div>`;
-    $('animation-targets').querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(b=>b.onclick=()=>{preset=b.dataset.preset as typeof preset;selected='';render();});
+      ${basicMoves.map(card).join('')}</div>`;
+    $('spatial-moves-targets').innerHTML=`<div class="camera-catalogue">${spatialMoves.map(card).join('')}</div>`;
+    document.querySelectorAll<HTMLButtonElement>('#camera-basic-moves [data-preset], #camera-spatial-moves [data-preset]').forEach(b=>b.onclick=()=>{preset=b.dataset.preset as typeof preset;selected='';render();});
     const inspector=$('animation-inspector');
     if(preset==='static') {
       inspector.innerHTML='<h3>Static / locked-off</h3><p class="animation-note">Clear camera movement and return to the original framing. Existing layer animations are kept.</p><button id="camera-reset" class="outline">Reset camera movement…</button>';
@@ -42,7 +50,12 @@ export function createAnimateWorkspace(options: {
         ${input('effect-duration','Duration · seconds',current?.duration??Math.min(3,sceneDuration(cfg)),0,sceneDuration(cfg))}
         ${preset==='push'||preset==='pan'?input('camera-x','Target X · pixels',current?.x??cfg.width/2,0,cfg.width):''}
         ${preset==='push'||preset==='tilt'?input('camera-y','Target Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
-        ${picked&&(preset==='push'||preset==='pan'||preset==='tilt')?`<button id="use-picked-point" type="button" class="outline">Use picked point · ${picked.x}, ${picked.y}</button>`:''}
+        ${picked&&pickable.includes(preset)?`<button id="use-picked-point" type="button" class="outline">Use picked point · ${picked.x}, ${picked.y}</button>`:''}
+        ${preset==='tracking'?`<label class="field">Target layer<select id="track-layer">${cfg.layers.map(l=>`<option value="${escape(l.id)}" ${l.id===(current?.layerId)?'selected':''}>${escape(l.name)}</option>`).join('')}</select></label>`:''}
+        ${preset==='reveal'?`<fieldset class="reveal-layers"><legend>Layers to move aside</legend>${cfg.layers.map(l=>`<label class="field"><span>${escape(l.name)}</span><input type="checkbox" name="reveal-layer" value="${escape(l.id)}" ${(current?.layerIds??[]).includes(l.id)?'checked':''}></label>`).join('')}</fieldset>`:''}
+        ${preset==='truck'||preset==='diagonal'||preset==='tracking'?input('camera-x',preset==='tracking'?'Screen X · pixels':'Target X · pixels',current?.x??cfg.width/2,0,cfg.width):''}
+        ${preset==='pedestal'||preset==='diagonal'||preset==='crane'||preset==='tracking'?input('camera-y',preset==='tracking'?'Screen Y · pixels':'Target Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
+        ${preset==='reveal'?input('camera-x','Offset X · pixels',current?.offsetX??0,-cfg.width,cfg.width)+input('camera-y','Offset Y · pixels',current?.offsetY??0,-cfg.height,cfg.height):''}
         ${preset==='push'||preset==='pull'||preset==='zoom'?input('camera-scale','End scale · ×',current?.scale??(preset==='pull'?.8:1.2),preset==='push'?1:.25,preset==='pull'?1:4):''}
         <p class="animation-note">Moves progress at a constant rate and hold their final position. ${preset==='push'?'Flat artwork cannot produce true perspective change; this move shifts the viewpoint while enlarging the composition.':''}</p>
         <div class="row-actions"><button class="outline" type="submit">${current?'Update movement':'Add movement'}</button>${current?'<button type="button" id="cancel-edit">Cancel edit</button>':''}</div></form>`;
@@ -57,6 +70,8 @@ export function createAnimateWorkspace(options: {
           next.tracks=next.tracks.filter(t=>t.target!=='camera');next.animationTracks=(next.animationTracks??[]).filter(t=>t.target!=='camera');
         }
         const m:CameraMove={id:current?.id??crypto.randomUUID(),type:preset as CameraMoveType,start:value('effect-start',0),duration:value('effect-duration',0),x:value('camera-x',cfg.width/2),y:value('camera-y',cfg.height/2),scale:value('camera-scale',1)};
+        if(preset==='tracking')m.layerId=$<HTMLSelectElement>('track-layer').value;
+        if(preset==='reveal'){m.layerIds=[...document.querySelectorAll<HTMLInputElement>('input[name=reveal-layer]:checked')].map(i=>i.value);m.offsetX=value('camera-x',0);m.offsetY=value('camera-y',0);m.x=cfg.width/2;m.y=cfg.height/2;}
         next.cameraMoves=current?(next.cameraMoves??[]).map(old=>old.id===current.id?m:old):[...(next.cameraMoves??[]),m];
         selected=m.id;void save(next);
       };
@@ -69,7 +84,7 @@ export function createAnimateWorkspace(options: {
     updateTime();
   }
   function updatePickedButton() {
-    if(!picked||!['push','pan','tilt'].includes(preset))return;
+    if(!picked||!pickable.includes(preset))return;
     const form=$('effect-form');if(!form)return;
     let button=$<HTMLButtonElement>('use-picked-point');
     if(!button){button=document.createElement('button');button.id='use-picked-point';button.type='button';button.className='outline';const field=($('camera-y')||$('camera-x')).closest('label');field?.insertAdjacentElement('afterend',button);}

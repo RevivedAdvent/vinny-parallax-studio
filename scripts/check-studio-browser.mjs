@@ -50,10 +50,12 @@ try {
   assert.equal(await page.locator('.layer-row').count(), 0);
   assert.equal(await page.locator('#empty-view').isVisible(), true, 'blank scene shows import guidance');
   await page.locator('[data-tab="story"]').click();
+  await page.locator('#scene-fps').fill('24');await page.locator('#scene-fps').dispatchEvent('change');
   await page.locator('#scene-duration').fill('4');
   await page.locator('#scene-duration').dispatchEvent('change');
   await page.locator('#add-scene').click();
   await page.waitForFunction(() => document.querySelectorAll('.scene-item').length === 2);
+  await page.locator('#scene-fps').fill('24');await page.locator('#scene-fps').dispatchEvent('change');
   await page.locator('#scene-duration').fill('6');
   await page.locator('#scene-duration').dispatchEvent('change');
   await page.locator('[data-tab="arrange"]').click();
