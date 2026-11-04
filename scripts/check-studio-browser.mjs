@@ -122,7 +122,8 @@ try {
   assert.equal(await page.locator('[data-prop="depth"]').inputValue(), '1', 'depth uses validation clamp');
   await page.locator('[data-prop="depth"]').fill('0.7');
   await page.locator('[data-prop="depth"]').dispatchEvent('change');
-  assert.equal(await page.locator('[data-tab="animate"]').count(), 0, 'Animate workspace is removed');
+  assert.equal(await page.locator('[data-tab="animate"]').count(), 1, 'Animate workspace is available');
+  assert.equal(await page.locator('#animation-timeline').isVisible(), false, 'Animate timeline stays out of Arrange');
   assert.equal(await page.locator('#timeline-dock').count(), 0, 'Animation timeline is not rendered');
   assert.equal(await page.locator('#track-editor').count(), 0, 'Track editor is not rendered');
   assert.equal(await page.locator('#key-camera').count(), 0, 'Animation authoring controls are removed');

@@ -1,3 +1,4 @@
+import type { AnimationTrack } from './animation.ts';
 export type Property = 'x' | 'y' | 'zoom' | 'roll';
 export type Easing = 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out' | 'overshoot_settle' | 'hold' | 'seeded_noise';
 export interface Limits { min: number; max: number }
@@ -51,8 +52,10 @@ export interface CameraSceneConfig {
     limits: Record<Property, Limits>;
   };
   tracks: Track[];
+  /** Seconds-based authoring. A channel here replaces the corresponding legacy channel. */
+  animationTracks?: AnimationTrack[];
 }
-export interface Pose { x: number; y: number; zoom: number; roll: number }
+export interface Pose { x: number; y: number; zoom: number; roll: number; opacity: number }
 export interface CameraState extends Pose {
   frame: number;
   uniformDelta: number;
@@ -66,4 +69,5 @@ export interface LayerTransform {
   y: number;
   scale: number;
   roll: number;
+  opacity: number;
 }

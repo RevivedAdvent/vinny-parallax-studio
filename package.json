@@ -23,6 +23,10 @@
     "lab:basic": "node scripts/render-camera-lab-basic.mjs",
     "lab:basic-encode": "node scripts/export-camera-lab-basic.mjs",
     "export:video": "node scripts/export-video.mjs",
+    "test:animation": "node --test tests/animation.test.mjs",
+    "test:animation-browser": "node scripts/check-animation-browser.mjs",
+    "test:animation-export": "node scripts/check-animation-export.mjs",
+    "test:animation-export-ui": "node scripts/check-animation-export-ui.mjs",
     "test:real-project": "node scripts/check-real-project-export.mjs"
   },
   "dependencies": {

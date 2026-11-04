@@ -28,8 +28,9 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   let frame=0,intensity=1,state=core.evaluate(0),transforms=projectLayers(config,state);
   const readback=document.createElement('canvas');readback.width=config.width;readback.height=config.height;
   const context=readback.getContext('2d',{willReadFrequently:true});if(!context)throw new Error('PNG export requires a 2D canvas context');
-  function renderFrame(index:number){state=core.evaluate(index,intensity);frame=index;transforms=projectLayers(config,state);
-    transforms.forEach((pose,i)=>{const layer=config.layers[i],sprite=sprites[i];sprite.position.set(pose.x,pose.y);sprite.scale.set(pose.scale*(layer.scale??1));sprite.rotation=(pose.roll+(layer.rotation??0))*Math.PI/180;sprite.alpha=layer.opacity??1;sprite.visible=layer.visible??true;});
+  function renderFrame(index:number){core.evaluate(index,intensity);renderTime(index/config.fps);}
+  function renderTime(seconds:number){state=core.evaluateTime(seconds,intensity);frame=seconds*config.fps;transforms=projectLayers(config,state);
+    transforms.forEach((pose,i)=>{const layer=config.layers[i],sprite=sprites[i];sprite.position.set(pose.x,pose.y);sprite.scale.set(pose.scale);sprite.rotation=pose.roll*Math.PI/180;sprite.alpha=pose.opacity;sprite.visible=layer.visible??true;});
     app.renderer.render({container:app.stage});
   }
   function capture(includePNG=true, matte=true):{png?:string;coverage:Coverage}{const ctx=context!;ctx.clearRect(0,0,config.width,config.height);ctx.drawImage(app.canvas,0,0);const pixels=ctx.getImageData(0,0,config.width,config.height).data;let count=0,transparent=0,minAlpha=255,minX=config.width,minY=config.height,maxX=-1,maxY=-1;
@@ -39,13 +40,13 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
     if(next.width!==config.width||next.height!==config.height){throw new Error('Scene composition size changes require recreating renderer');}
     const changed=next.layers.length!==config.layers.length||next.layers.some((l,i)=>l.id!==config.layers[i].id||l.asset!==config.layers[i].asset);
     if(changed)await loadLayers(next.layers);
-    core=candidate;config=next;renderFrame(Math.min(frame,next.totalFrames-1));
+    core=candidate;config=next;renderTime(Math.min(frame/next.fps,next.totalFrames/next.fps));
   }
   renderFrame(0);
-  return {app,renderFrame,capture,setConfig,
-    setIntensity(value:number){intensity=clamp(finite(value,'intensity'),0,1);renderFrame(frame);},
-    setVisible(id:string,visible:boolean){const index=config.layers.findIndex(l=>l.id===id);if(index<0)throw new Error(`Unknown layer ${id}`);config.layers[index].visible=visible;sprites[index].visible=visible;renderFrame(frame);},
-    getState:()=>({frame,intensity,state:structuredClone(state),transforms:structuredClone(transforms),visible:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].visible])),config:structuredClone(config)}),
+  return {app,renderFrame,renderTime,capture,setConfig,
+    setIntensity(value:number){intensity=clamp(finite(value,'intensity'),0,1);renderTime(frame/config.fps);},
+    setVisible(id:string,visible:boolean){const index=config.layers.findIndex(l=>l.id===id);if(index<0)throw new Error(`Unknown layer ${id}`);config.layers[index].visible=visible;sprites[index].visible=visible;renderTime(frame/config.fps);},
+    getState:()=>({frame,intensity,state:structuredClone(state),transforms:structuredClone(transforms),spriteAlpha:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].alpha])),visible:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].visible])),config:structuredClone(config)}),
     destroy(){resizeObserver.disconnect();app.destroy(true,{children:true});}};
 }
 export type CameraScene=Awaited<ReturnType<typeof createCameraScene>>;

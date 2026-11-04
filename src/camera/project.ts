@@ -15,6 +15,6 @@ export function projectLayers(config: CameraSceneConfig, state: CameraState): La
     const dy = (config.height / 2 - anchor.y) * factor + (layer.y ?? 0) * baseZoom * factor - state.y * layer.depth + local.y;
     return { id: layer.id, depth: layer.depth,
       x: anchor.x + dx * c - dy * s, y: anchor.y + dx * s + dy * c,
-      scale: baseZoom * factor * local.zoom, roll: state.roll + local.roll };
+      scale: baseZoom * factor * (layer.scale ?? 1) * local.zoom, roll: state.roll + (layer.rotation ?? 0) + local.roll, opacity: Math.max(0, Math.min(1, (layer.opacity ?? 1) * local.opacity)) };
   });
 }

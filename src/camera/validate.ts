@@ -1,4 +1,5 @@
 import type { CameraSceneConfig, Limits, Property } from './types.ts';
+import { validateAnimation } from './animation.ts';
 import { clamp, finite } from './easing.ts';
 
 const properties = ['x', 'y', 'zoom', 'roll'] as const;
@@ -76,5 +77,6 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
   }
   // Stable order makes additive floating-point composition independent of authoring order.
   config.tracks.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  validateAnimation(config);
   return config;
 }

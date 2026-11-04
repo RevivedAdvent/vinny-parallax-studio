@@ -1,6 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile, rename } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, rm, rename } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launchCamera } from './camera-runtime.mjs';
@@ -39,39 +38,45 @@ export async function exportStoryVideo({ project: raw, sceneId, output, onPhase 
     }
     resolvedScenes.push(copy);
   }
-  const directory = await mkdtemp(resolve(tmpdir(), 'vinny-export-'));
   const destination = resolve(output || resolve('output', `${safe(project.title)}_${selected ? safe(selected.title) : 'full-video'}.mp4`));
   const temporary = resolve(dirname(destination), `.${basename(destination)}.${process.pid}.partial.mp4`);
-  let runtime;
+  let runtime, encoderProcess;
   try {
+    // Keep each source scene's FPS and coordinate system. Sample source time at n/60,
+    // not a rounded source frame, then resize only the final composed image.
+    const args = ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'image2pipe', '-framerate', String(fps), '-vcodec', 'png', '-i', 'pipe:0', '-vf', 'setsar=1', '-r', String(fps), '-fps_mode', 'cfr', '-an', '-c:v', encoder,
+      ...(encoder === 'libx264' ? ['-preset', 'veryfast', '-crf', '18'] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', temporary];
+    encoderProcess = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    let encoderError, diagnostics = '';
+    encoderProcess.stderr.on('data', data => { diagnostics = (diagnostics + data).slice(-16000); });
+    encoderProcess.on('error', error => { encoderError = error; });
+    encoderProcess.stdin.on('error', error => { encoderError = error; });
+    const finished = new Promise(resolveDone => encoderProcess.on('close', code => resolveDone(code)));
     for (let i = 0; i < scenes.length; i++) {
       onPhase('rendering', i + 1, scenes.length);
-      const scene = resolvedScenes[i];
-      const sourceWidth=scene.width,sourceHeight=scene.height;
-      scene.width = width; scene.height = height; scene.fps = fps;
-      scene.totalFrames = counts[i]; scene.tracks = [];
-      // Scale the composition coordinate space uniformly to fit the 16:9 output.
-      // Each layer keeps its own transform and stacking order; no per-layer stretching.
-      const scale=Math.max(width/sourceWidth,height/sourceHeight),offsetX=(width-sourceWidth*scale)/2,offsetY=(height-sourceHeight*scale)/2;
-      scene.layers.forEach(layer => { layer.x=(layer.x??0)*scale+offsetX; layer.y=(layer.y??0)*scale+offsetY; layer.scale=(layer.scale??1)*scale; });
-      scene.camera.baseZoom = 1;
-      scene.camera.limits.zoom = { min: 1, max: 1 };
-      scene.camera.limits.x = { min: 0, max: 0 }; scene.camera.limits.y = { min: 0, max: 0 }; scene.camera.limits.roll = { min: 0, max: 0 };
-      scene.camera.anchor = { x: width / 2, y: height / 2 };
-      const input = { config: scene, intensity: 0 };
-      runtime = await launchCamera(input);
-      await runtime.page.evaluate(() => window.cameraStudio.renderFrame(0));
-      const png = await runtime.page.evaluate(() => { const canvas=document.querySelector('canvas');if(!canvas)throw new Error('Scene renderer canvas missing');return canvas.toDataURL('image/png'); });
-      await writeFile(resolve(directory, `scene-${i}.png`), Buffer.from(png.split(',')[1], 'base64'));
+      runtime = await launchCamera({ config: resolvedScenes[i], intensity: 1 });
+      for (let n = 0; n < counts[i]; n++) {
+        if (encoderError) throw new Error(`FFmpeg failed: ${encoderError.message}\n${diagnostics}`);
+        const png = await runtime.page.evaluate(({ seconds, width, height }) => {
+          window.cameraStudio.renderTime(seconds);
+          const source = document.querySelector('canvas');
+          if (!source) throw new Error('Scene renderer canvas missing');
+          const output = document.createElement('canvas'); output.width = width; output.height = height;
+          const context = output.getContext('2d');
+          const scale = Math.max(width / source.width, height / source.height);
+          context.fillStyle = '#000'; context.fillRect(0, 0, width, height);
+          context.drawImage(source, (width - source.width * scale) / 2, (height - source.height * scale) / 2, source.width * scale, source.height * scale);
+          return output.toDataURL('image/png');
+        }, { seconds: Math.min(n / fps, resolvedScenes[i].totalFrames / resolvedScenes[i].fps), width, height });
+        await new Promise((resolveWrite, reject) => encoderProcess.stdin.write(Buffer.from(png.split(',')[1], 'base64'), error => error ? reject(error) : resolveWrite()));
+      }
+      if (runtime.errors.length) throw new Error(runtime.errors.join('\n'));
       await runtime.close(); runtime = undefined;
     }
     onPhase('encoding');
-    const args = ['-hide_banner', '-loglevel', 'error', '-y'];
-    for (let i = 0; i < scenes.length; i++) args.push('-loop', '1', '-framerate', String(fps), '-i', resolve(directory, `scene-${i}.png`));
-    const filters = scenes.map((_, i) => `[${i}:v]scale=${width}:${height},setsar=1,format=yuv420p,trim=end_frame=${counts[i]},setpts=PTS-STARTPTS[v${i}]`);
-    filters.push(scenes.map((_, i) => `[v${i}]`).join('') + `concat=n=${scenes.length}:v=1:a=0[outv]`);
-    args.push('-filter_complex', filters.join(';'), '-map', '[outv]', '-frames:v', String(counts.reduce((a, b) => a + b, 0)), '-r', String(fps), '-fps_mode', 'cfr', '-an', '-c:v', encoder, ...(encoder === 'libx264' ? ['-preset', 'veryfast', '-crf', '18'] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', temporary);
-    await new Promise((resolvePromise, reject) => { const child = spawn(ffmpeg, args, { stdio: 'inherit' }); child.on('error', reject); child.on('close', code => code === 0 ? resolvePromise() : reject(new Error(`FFmpeg exited with code ${code}`))); });
+    encoderProcess.stdin.end();
+    const exitCode = await finished;
+    if (exitCode !== 0 || encoderError) throw new Error(`FFmpeg exited with code ${exitCode}: ${diagnostics || encoderError?.message}`);
     onPhase('verifying');
     const probe = spawnSync(ffprobe, ['-v', 'error', '-count_frames', '-show_entries', 'stream=codec_name,width,height,avg_frame_rate,nb_read_frames:format=duration', '-of', 'json', temporary], { encoding: 'utf8' });
     if (probe.status !== 0) throw new Error(`FFprobe verification failed: ${probe.stderr}`);
@@ -80,7 +85,7 @@ export async function exportStoryVideo({ project: raw, sceneId, output, onPhase 
     await rename(temporary, destination);
     onPhase('ready');
     return { output: destination, metadata, frames, duration: frames / fps };
-  } finally { if (runtime) await runtime.close(); await rm(directory, { recursive: true, force: true }); await rm(temporary, { force: true }); }
+  } finally { if (encoderProcess && encoderProcess.exitCode === null) encoderProcess.kill(); if (runtime) await runtime.close(); await rm(temporary, { force: true }); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [inputPath, mode = 'all', sceneId, output] = process.argv.slice(2);
