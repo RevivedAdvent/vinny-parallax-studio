@@ -18,6 +18,7 @@
     "test:export-service": "node --test tests/export-service.test.mjs",
     "test:export-ui": "node scripts/check-export-ui.mjs",
     "test:export": "node scripts/check-master-export.mjs",
+    "test:export-quality": "node scripts/check-export-quality.mjs",
     "normalize:layers": "python3 scripts/normalize-layers.py",
     "render:frames": "node scripts/render-frames.mjs",
     "lab:basic": "node 'Legacy Code/Extras/camera-lab/render-camera-lab-basic.mjs'",

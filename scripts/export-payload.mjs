@@ -33,5 +33,6 @@ export function validateExportRequest(data) {
   }
   if (data.sceneId !== undefined && data.sceneId !== null && typeof data.sceneId !== 'string') throw new Error('sceneId must be a string');
   if (data.sceneId && !project.scenes.some(scene => scene.id === data.sceneId)) throw new Error('Selected scene not found');
-  return { project, sceneId: data.sceneId || undefined, filename: typeof data.filename === 'string' ? data.filename : undefined };
+  if (data.quality !== undefined && data.quality !== 'standard' && data.quality !== 'high') throw new Error('quality must be standard or high');
+  return { project, sceneId: data.sceneId || undefined, filename: typeof data.filename === 'string' ? data.filename : undefined, quality: data.quality || 'standard' };
 }

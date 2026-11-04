@@ -62,6 +62,7 @@ async function startExport(req, res) {
   exportStoryVideo({
     project: request.project,
     sceneId: request.sceneId,
+    quality: request.quality,
     output: resolve(dir, `${id}.mp4`),
     onPhase: (phase, index, total) => {
       job.phase = phase;

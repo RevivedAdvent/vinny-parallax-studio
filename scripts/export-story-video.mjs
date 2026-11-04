@@ -6,7 +6,13 @@ import { launchCamera } from './camera-runtime.mjs';
 import { resolveLayerAsset, AssetError } from './export-assets.mjs';
 
 const safe = value => String(value || 'video').normalize('NFKD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100) || 'video';
-export async function exportStoryVideo({ project: raw, sceneId, output, onPhase = () => {} }) {
+// standard: the original fast encode (veryfast, CRF 18). high: slower, sharper encode (slow, CRF 14) for social upload.
+export const QUALITY_PRESETS = {
+  standard: ['-preset', 'veryfast', '-crf', '18'],
+  high: ['-preset', 'slow', '-crf', '14'],
+};
+export async function exportStoryVideo({ project: raw, sceneId, output, quality = 'standard', onPhase = () => {} }) {
+  if (!Object.hasOwn(QUALITY_PRESETS, quality)) throw new Error(`Unknown export quality "${quality}"; use standard or high`);
   const project = structuredClone(raw);
   if (!project || !Array.isArray(project.scenes)) throw new Error('Invalid Story project');
   for (const scene of project.scenes) if (!scene || !scene.camera || !scene.camera.limits || !Array.isArray(scene.layers) || !Array.isArray(scene.tracks)) throw new Error('Story project scene is missing camera or layer data');
@@ -45,7 +51,7 @@ export async function exportStoryVideo({ project: raw, sceneId, output, onPhase 
     // Keep each source scene's FPS and coordinate system. Sample source time at n/60,
     // not a rounded source frame, then resize only the final composed image.
     const args = ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'image2pipe', '-framerate', String(fps), '-vcodec', 'png', '-i', 'pipe:0', '-vf', 'setsar=1', '-r', String(fps), '-fps_mode', 'cfr', '-an', '-c:v', encoder,
-      ...(encoder === 'libx264' ? ['-preset', 'veryfast', '-crf', '18'] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', temporary];
+      ...(encoder === 'libx264' ? QUALITY_PRESETS[quality] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', temporary];
     encoderProcess = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] });
     let encoderError, diagnostics = '';
     encoderProcess.stderr.on('data', data => { diagnostics = (diagnostics + data).slice(-16000); });
@@ -88,9 +94,13 @@ export async function exportStoryVideo({ project: raw, sceneId, output, onPhase 
   } finally { if (encoderProcess && encoderProcess.exitCode === null) encoderProcess.kill(); if (runtime) await runtime.close(); await rm(temporary, { force: true }); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [inputPath, mode = 'all', sceneId, output] = process.argv.slice(2);
-  if (!inputPath) throw new Error('Usage: node scripts/export-story-video.mjs project.json [current|all] [scene-id] [output.mp4]');
+  const args = process.argv.slice(2);
+  const qualityIndex = args.indexOf('--quality');
+  const quality = qualityIndex >= 0 ? args[qualityIndex + 1] : 'standard';
+  if (qualityIndex >= 0) args.splice(qualityIndex, 2);
+  const [inputPath, mode = 'all', sceneId, output] = args;
+  if (!inputPath) throw new Error('Usage: node scripts/export-story-video.mjs project.json [current|all] [scene-id] [output.mp4] [--quality standard|high]');
   const data = JSON.parse(await readFile(resolve(inputPath), 'utf8'));
-  const result = await exportStoryVideo({ project: data.project ?? data, sceneId: mode === 'current' ? sceneId : undefined, output });
+  const result = await exportStoryVideo({ project: data.project ?? data, sceneId: mode === 'current' ? sceneId : undefined, output, quality });
   console.log(JSON.stringify(result, null, 2));
 }
