@@ -2,11 +2,11 @@ import { mkdir, writeFile, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { projectRoot } from './runtime.mjs';
-import { launchCamera } from './camera-runtime.mjs';
-import { LAB_BASIC_PRESETS } from '../src/scenes/camera-lab-basic.ts';
-import { projectLayers } from '../src/camera/project.ts';
-import { compileCamera } from '../src/camera/evaluate.ts';
+import { projectRoot } from '../../../scripts/runtime.mjs';
+import { launchCamera } from '../../../scripts/camera-runtime.mjs';
+import { LAB_BASIC_PRESETS } from './camera-lab-basic.ts';
+import { projectLayers } from '../../../src/camera/project.ts';
+import { compileCamera } from '../../../src/camera/evaluate.ts';
 
 const dir = resolve(projectRoot, 'output/camera-lab-basic');
 const hash = buffer => createHash('sha256').update(buffer).digest('hex');

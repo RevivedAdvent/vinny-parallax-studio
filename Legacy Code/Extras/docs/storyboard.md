@@ -1,6 +1,6 @@
 # Scene 01 — The arrival
 
-**Historical storyboard for the legacy preview**, not the current StoryStudio camera proof or editor. See the [README](../README.md) for current features.
+**Historical storyboard for the legacy preview**, not the current StoryStudio camera proof or editor. See the [README](../../../README.md) for current features.
 
 Working title: **A world before his time**. Duration: 24 seconds, 576 frames at 24 fps.
 

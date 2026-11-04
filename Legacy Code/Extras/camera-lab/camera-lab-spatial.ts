@@ -1,4 +1,4 @@
-import type { CameraSceneConfig, Track } from '../camera/types.ts';
+import type { CameraSceneConfig, Track } from '../../../src/camera/types.ts';
 import { LAB_FPS, LAB_FRAMES, LAB_WIDTH, LAB_HEIGHT } from './camera-lab-basic.ts';
 
 const layers = [

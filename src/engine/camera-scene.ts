@@ -46,6 +46,7 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   return {app,renderFrame,renderTime,capture,setConfig,
     setIntensity(value:number){intensity=clamp(finite(value,'intensity'),0,1);renderTime(frame/config.fps);},
     setVisible(id:string,visible:boolean){const index=config.layers.findIndex(l=>l.id===id);if(index<0)throw new Error(`Unknown layer ${id}`);config.layers[index].visible=visible;sprites[index].visible=visible;renderTime(frame/config.fps);},
+    getCameraView:()=>({...state.compositeCamera}),
     getState:()=>({frame,intensity,state:structuredClone(state),transforms:structuredClone(transforms),spriteAlpha:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].alpha])),visible:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].visible])),config:structuredClone(config)}),
     destroy(){resizeObserver.disconnect();app.destroy(true,{children:true});}};
 }

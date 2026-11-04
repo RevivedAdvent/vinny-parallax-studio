@@ -3,8 +3,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import json
 
-ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'output/camera-lab-basic'
+ROOT = Path(__file__).resolve().parents[3]
+OUT = ROOT / 'output/camera-lab-spatial'
 report = json.loads((OUT / 'lab-report.json').read_text())
 assert report['complete'] and report['pass']
 FRAMES = [0, 8, 20, 32, 44, 56, 63, 71]

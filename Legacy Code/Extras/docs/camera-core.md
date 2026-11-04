@@ -1,6 +1,6 @@
 # Frame-indexed camera core — Phase 1
 
-**Historical phase notes.** For current editor behavior and exact projection see the [camera system reference](camera-system-reference.md).
+**Historical phase notes.** For the older track projection see the [camera system reference](camera-system-reference.md); see the [quick guide](../../../docs/camera-quick-guide.md) for current editor controls.
 
 This is a reusable 2.5D camera foundation, not the preset catalog, Camera Lab, or the hero story edit.
 

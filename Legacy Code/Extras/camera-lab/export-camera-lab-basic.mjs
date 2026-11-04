@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { readFile, access, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
-import { projectRoot } from './runtime.mjs';
-import { LAB_BASIC_PRESETS } from '../src/scenes/camera-lab-basic.ts';
+import { projectRoot } from '../../../scripts/runtime.mjs';
+import { LAB_BASIC_PRESETS } from './camera-lab-basic.ts';
 
 const dir = resolve(projectRoot, 'output/camera-lab-basic');
 const report = JSON.parse(await readFile(resolve(dir, 'lab-report.json'), 'utf8'));

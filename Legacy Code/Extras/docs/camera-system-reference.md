@@ -1,6 +1,6 @@
 # Camera system reference
 
-This describes the current implementation in `src/camera/` and `src/engine/camera-scene.ts`. For a nontechnical introduction see the [quick guide](camera-quick-guide.md).
+This historical reference describes the older depth-based track implementation, which remains supported for existing projects. It does not describe the current camera movement controls. For current editor guidance see the [quick guide](../../../docs/camera-quick-guide.md).
 
 ## Coordinates and configuration
 

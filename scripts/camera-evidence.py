@@ -67,7 +67,7 @@ for layer in registration['layers']:
     assert hashlib.sha256((ROOT / 'public/assets/scene-01-normalized' / layer['file']).read_bytes()).hexdigest() == layer['normalizedSHA256']
 repair = registration['layers'][0]['alphaRepair']
 assert repair['rgbSHA256Before'] == repair['rgbSHA256After']
-legacy_main_hash = hashlib.sha256((ROOT / 'src/legacy-main.ts').read_bytes()).hexdigest()
+legacy_main_hash = hashlib.sha256((ROOT / 'Legacy Code/legacy-main.ts').read_bytes()).hexdigest()
 old_hashes = (ROOT / 'output/camera-phase0/source-hashes-before.txt').read_text().splitlines()
 old_main = next(line.split()[0] for line in old_hashes if line.endswith('src/main.ts'))
 assert legacy_main_hash == old_main

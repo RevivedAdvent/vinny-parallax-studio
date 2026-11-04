@@ -1,4 +1,5 @@
 import type { AnimationTrack } from './animation.ts';
+import type { CameraMove } from './moves.ts';
 export type Property = 'x' | 'y' | 'zoom' | 'roll';
 export type Easing = 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out' | 'overshoot_settle' | 'hold' | 'seeded_noise';
 export interface Limits { min: number; max: number }
@@ -54,12 +55,15 @@ export interface CameraSceneConfig {
   tracks: Track[];
   /** Seconds-based authoring. A channel here replaces the corresponding legacy channel. */
   animationTracks?: AnimationTrack[];
+  /** Independent composite camera moves. Legacy tracks remain supported. */
+  cameraMoves?: CameraMove[];
 }
 export interface Pose { x: number; y: number; zoom: number; roll: number; opacity: number }
 export interface CameraState extends Pose {
   frame: number;
   uniformDelta: number;
   dollyDelta: number;
+  compositeCamera: { x: number; y: number; scale: number };
   layers: Record<string, Pose>;
 }
 export interface LayerTransform {

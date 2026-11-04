@@ -25,7 +25,7 @@ try {
   const report = { frames, errors, checks: {}, states: [] };
   // Use the existing scene factory in a second isolated host. No implementation edits.
   await page.evaluate(async () => {
-    const { createScene } = await import('/src/engine/scene.ts');
+    const { createScene } = await import('/Legacy%20Code/engine/scene.ts');
     const host = document.createElement('div'); document.body.appendChild(host);
     window.auditScene = await createScene(host);
   });

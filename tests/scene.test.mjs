@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
-import { SCENE } from '../src/scenes/arrival.ts';
-import { clamp, smooth, envelope, random } from '../src/engine/math.ts';
+import { SCENE } from '../Legacy Code/scenes/arrival.ts';
+import { clamp, smooth, envelope, random } from '../Legacy Code/engine/math.ts';
 test('camera easing is bounded and smooth', () => {
   assert.equal(clamp(-1), 0); assert.equal(clamp(9), 1);
   assert.equal(smooth(0), 0); assert.equal(smooth(1), 1); assert.equal(smooth(0.5), 0.5);
