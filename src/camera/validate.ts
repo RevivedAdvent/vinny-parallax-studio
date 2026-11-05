@@ -1,6 +1,7 @@
 import type { CameraSceneConfig, Limits, Property } from './types.ts';
 import { validateAnimation } from './animation.ts';
 import { validateMoves } from './moves.ts';
+import { validateLayerEffects } from './layer-effects.ts';
 import { clamp, finite } from './easing.ts';
 
 const properties = ['x', 'y', 'zoom', 'roll'] as const;
@@ -80,5 +81,6 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
   config.tracks.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   validateAnimation(config);
   validateMoves(config);
+  validateLayerEffects(config);
   return config;
 }

@@ -1,0 +1,40 @@
+[data-workspace=parallax] .parallax-pane{display:block}
+#parallax-inspector{display:none}
+[data-workspace=parallax] #parallax-inspector{display:block}
+[data-workspace=parallax] #properties{display:none}
+[data-workspace=parallax] .preview-column{display:grid;grid-template-rows:minmax(180px,1fr) auto;align-items:stretch;padding:12px 24px 0;overflow:hidden}
+[data-workspace=parallax] .viewer{height:100%;width:100%;min-height:0;max-height:none;aspect-ratio:auto;display:flex;align-items:center;justify-content:center}
+[data-workspace=parallax] #canvas-host{width:100%;height:100%;display:flex;align-items:center;justify-content:center;aspect-ratio:auto;min-width:0;min-height:0}
+[data-workspace=parallax] #canvas-host canvas{display:block;max-width:100%;max-height:100%;object-fit:contain}
+.parallax-catalogue{display:grid;gap:8px}
+.parallax-pane .panel-heading{margin-top:14px}
+.parallax-layers{border:1px solid #3a4438;border-radius:5px;padding:8px;margin:8px 0;display:grid;gap:4px}
+.parallax-layers legend{font-size:11px;letter-spacing:1.2px;color:var(--muted);padding:0 4px}
+.parallax-item{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid #414a3c;border-left:3px solid #8a9a7a;border-radius:5px;padding:7px 8px;background:#161d17;margin-bottom:6px}
+.parallax-item.selected{border-color:var(--gold);background:#293024}
+.parallax-item b{display:block;font-size:12.5px}
+.parallax-item small{display:block;color:var(--muted);font-size:11px;margin-top:3px;line-height:1.4}
+.parallax-actions{display:flex;gap:4px;flex:none}
+.parallax-actions button{border:1px solid #3a4438;border-radius:3px;padding:4px 6px;font-size:11px;color:#bdc6b4}
+.parallax-empty{color:var(--muted);font-size:11.5px;line-height:1.5;margin:6px 0}
+#parallax-inspector .field{gap:6px;margin-bottom:8px}
+#parallax-inspector input{width:110px}
+#parallax-inspector input[type=range]{width:100%}
+#parallax-inspector input[type=checkbox]{width:auto}
+#parallax-inspector output{color:var(--gold);font-size:11.5px}
+#parallax-strength-out{margin-left:6px}
+#parallax-layer-effects,#parallax-environmental{margin-top:16px}
+#parallax-layer-effects summary,#parallax-environmental summary{cursor:pointer;list-style:none}
+#parallax-layer-effects summary::-webkit-details-marker,#parallax-environmental summary::-webkit-details-marker{display:none}
+#parallax-layer-effects summary::after,#parallax-environmental summary::after{content:"▸";float:right}
+#parallax-layer-effects[open] summary::after,#parallax-environmental[open] summary::after{content:"▾"}
+#parallax-layer-effects[open] summary,#parallax-environmental[open] summary{margin-bottom:10px}
+.parallax-subsection{border:1px solid #3a4438;border-radius:5px;padding:8px;margin:8px 0}
+.parallax-subsection summary{cursor:pointer;color:var(--muted);font-size:11.5px;letter-spacing:.4px}
+.parallax-subsection[open] summary{margin-bottom:8px}
+.parallax-corner{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:end;margin-bottom:6px}
+.parallax-corner b{font-size:11.5px;color:var(--muted);align-self:center}
+.parallax-corner .field{margin:0}
+.parallax-corner input{width:78px}
+#parallax-inspector select{width:100%;max-width:220px}
+#parallax-inspector button[data-plane-delete]{justify-self:start;margin-top:4px}

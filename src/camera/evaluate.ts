@@ -5,6 +5,7 @@ import { validateScene } from './validate.ts';
 import { applyReveals, evaluateMoves } from './moves.ts';
 import { projectLayers } from './project.ts';
 import { evaluateVirtualMoves } from './virtual-moves.ts';
+import { evaluateLayerEffects } from './layer-effects.ts';
 
 const neutralPose = (): Pose => ({ x: 0, y: 0, zoom: 1, roll: 0, opacity: 1 });
 export function trackValue(track: Track, frame: number, fps: number) {
@@ -84,6 +85,21 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     const rotation = authored.has(`layer:${id}/rotation`) ? { min: -180, max: 180 } : bounds.roll;
     pose.roll = clamp(pose.roll, rotation.min, rotation.max);
     pose.opacity = clamp(pose.opacity, 0, 1);
+  }
+  // Layer effects are added after camera tracks are bounded, so framing offsets
+  // may leave the frame without being clipped by the camera's own limits.
+  const effects = evaluateLayerEffects(config, seconds, amount);
+  for (const [id, delta] of Object.entries(effects)) {
+    const pose = result.layers[id];
+    if (!pose) continue;
+    pose.x += delta.x; pose.y += delta.y;
+    pose.zoom *= delta.scale; pose.roll += delta.rotation;
+    pose.opacity = clamp(pose.opacity * delta.opacity, 0, 1);
+    if (delta.mask) (result.layerMasks ??= {})[id] = delta.mask;
+    if (delta.shadow) (result.layerShadows ??= {})[id] = delta.shadow;
+    if (delta.warp) (result.layerWarps ??= {})[id] = delta.warp.corners;
+    if (delta.particles) (result.layerParticles ??= {})[id] = delta.particles;
+    if (delta.wrap) (result.layerWraps ??= {})[id] = delta.wrap;
   }
   if ((config.cameraMoves ?? []).some(move => move.model === 2)) {
     result.virtualCamera = evaluateVirtualMoves(config, seconds, amount, projectLayers(config, result));

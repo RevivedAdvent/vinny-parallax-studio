@@ -1,5 +1,6 @@
 import type { AnimationTrack } from './animation.ts';
 import type { CameraMove } from './moves.ts';
+import type { LayerEffect, LayerMask, LayerShadow, LayerWrap, ParallaxSettings, ParticleInstance, DepthScaleSettings, DepthPlane, WarpCorners } from './layer-effects.ts';
 import type { VirtualCamera } from './virtual-projection.ts';
 export type Property = 'x' | 'y' | 'zoom' | 'roll';
 export type Easing = 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out' | 'overshoot_settle' | 'hold' | 'seeded_noise';
@@ -58,6 +59,14 @@ export interface CameraSceneConfig {
   animationTracks?: AnimationTrack[];
   /** Independent composite camera moves. Legacy tracks remain supported. */
   cameraMoves?: CameraMove[];
+  /** Depth response for the parallax workspace. Absent means fully neutral. */
+  parallax?: ParallaxSettings;
+  /** Optional depth-based size adjustment, applied before virtual-camera projection. */
+  depthScale?: DepthScaleSettings;
+  /** Optional intermediate depth planes. Layers keep their stored depth when unassigned. */
+  depthPlanes?: DepthPlane[];
+  /** Deterministic layer-level animation. Absent or empty means no layer effects. */
+  layerEffects?: LayerEffect[];
 }
 export interface Pose { x: number; y: number; zoom: number; roll: number; opacity: number }
 export interface CameraState extends Pose {
@@ -67,6 +76,16 @@ export interface CameraState extends Pose {
   compositeCamera: { x: number; y: number; scale: number };
   /** Present only when a scene contains version-2 camera moves. */
   virtualCamera?: VirtualCamera;
+  /** Mask state for reveal effects, keyed by layer id. */
+  layerMasks?: Record<string, LayerMask>;
+  /** Attached shadow state, keyed by layer id. */
+  layerShadows?: Record<string, LayerShadow>;
+  /** Animated warp corners, keyed by layer id. */
+  layerWarps?: Record<string, WarpCorners>;
+  /** Deterministic particle instances, keyed by layer id. */
+  layerParticles?: Record<string, ParticleInstance[]>;
+  /** Continuous tile travel for tileable ambient layers. */
+  layerWraps?: Record<string, LayerWrap>;
   layers: Record<string, Pose>;
 }
 export interface LayerTransform {
