@@ -14,7 +14,7 @@ try {
  await page.locator('[data-tab="animate"]').click();
  await page.locator('#camera-basic-moves summary').click();
  await page.locator('[data-preset="push"]').click();
- await page.locator('#effect-duration').fill('2');await page.locator('#camera-x').fill('1200');await page.locator('#camera-y').fill('700');await page.locator('#camera-scale').fill('1.5');
+ await page.locator('#effect-duration').fill('2');await page.locator('#camera-x').fill('1200');await page.locator('#camera-y').fill('700');await page.locator('#camera-travel').fill('20');
  await page.locator('#effect-form button[type=submit]').click();
  await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===1);
  await page.locator('[data-tab="effects"]').click();
@@ -58,14 +58,15 @@ try {
  assert.equal(await page.locator('#camera-x').inputValue(),pickedX);assert.equal(await page.locator('#camera-y').inputValue(),pickedY);
  await page.locator('[data-preset="pan"]').click();await page.locator('#use-picked-point').click();assert.equal(await page.locator('#camera-x').inputValue(),pickedX);
  await page.locator('[data-preset="tilt"]').click();await page.locator('#use-picked-point').click();assert.equal(await page.locator('#camera-y').inputValue(),pickedY);
- await page.locator('[data-preset="zoom"]').click();assert.equal(await page.locator('#use-picked-point').count(),0);
+ await page.locator('[data-preset="zoom"]').click();assert.equal(await page.locator('#use-picked-point').count(),1);
  await page.locator('[data-tab="effects"]').click();assert.equal(await page.locator('#coordinate-picker').getAttribute('aria-pressed'),'false');assert.equal(await page.locator('#coordinate-overlay').isVisible(),false);
- await page.locator('[data-tab="animate"]').click();await page.locator('#coordinate-picker').click();
+ await page.locator('[data-tab="animate"]').click();await page.locator('[data-preset="push"]').click();await page.locator('#coordinate-picker').click();
  await page.evaluate(()=>window.cameraStudio.renderTime(4));
  state=await page.evaluate(()=>window.cameraStudio.getState());const b=await canvas.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);
  text=await page.locator('#coordinate-readout').innerText();match=text.match(/X: (-?\d+), Y: (-?\d+)/);assert.ok(match,text);
- assert.ok(Math.abs(Number(match[1])-(960+state.state.compositeCamera.x))<=2,'picker reverses camera X');
- assert.ok(Math.abs(Number(match[2])-(540+state.state.compositeCamera.y))<=2,'picker reverses camera Y');
+ const camera=state.state.virtualCamera,dist=(3840-camera.z)/(Math.cos(camera.yaw)*Math.cos(camera.pitch));
+ assert.ok(Math.abs(Number(match[1])-(960+camera.x+dist*Math.sin(camera.yaw)*Math.cos(camera.pitch)))<=2,'picker reverses camera X on the middle plane');
+ assert.ok(Math.abs(Number(match[2])-(540+camera.y+dist*Math.sin(camera.pitch)))<=2,'picker reverses camera Y on the middle plane');
  await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
  await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);await page.locator('[data-tab="animate"]').click();assert.equal(await page.locator('#use-picked-point').count(),0,'picked point is temporary');await page.locator('[data-tab="effects"]').click();
  state=await page.evaluate(()=>window.cameraStudio.getState());assert.equal(state.config.cameraMoves[0].start,2.5);assert.equal(state.config.cameraMoves[0].duration,3);

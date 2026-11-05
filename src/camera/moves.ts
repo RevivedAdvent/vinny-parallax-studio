@@ -1,11 +1,14 @@
 import type { CameraSceneConfig, LayerTransform, Pose } from './types.ts';
 import { clamp, finite } from './easing.ts';
 
-export type CameraMoveType = 'push' | 'pull' | 'pan' | 'tilt' | 'zoom' | 'truck' | 'pedestal' | 'diagonal' | 'crane' | 'tracking' | 'reveal';
+export type CameraMoveType = 'push' | 'pull' | 'pan' | 'tilt' | 'zoom' | 'truck' | 'pedestal' | 'diagonal' | 'crane' | 'tracking' | 'reveal' | 'dutch' | 'handheld' | 'impact' | 'whip' | 'dollyZoom' | 'rackFocus' | 'orbit';
 export const basicMoves: CameraMoveType[] = ['push', 'pull', 'pan', 'tilt', 'zoom'];
 export const spatialMoves: CameraMoveType[] = ['truck', 'pedestal', 'diagonal', 'crane', 'tracking', 'reveal'];
+export const advancedMoves: CameraMoveType[] = ['dutch', 'handheld', 'impact', 'whip', 'dollyZoom', 'rackFocus', 'orbit'];
 export interface CameraMove {
   id: string;
+  /** Missing means the original composite camera; 2 is the perspective camera. */
+  model?: 2;
   type: CameraMoveType;
   start: number;
   duration: number;
@@ -14,6 +17,11 @@ export interface CameraMove {
   y: number;
   /** Final scale multiplier for push, pull and zoom. */
   scale: number;
+  /** Dolly travel as a fraction of the neutral focal distance. */
+  travel?: number;
+  /** Crane look-at point, in scene pixels. */
+  lookX?: number;
+  lookY?: number;
   /** Tracking: the layer kept at the requested screen position (x, y). */
   layerId?: string;
   /** Reveal: the foreground layers that move; everything else stays still. */
@@ -21,6 +29,16 @@ export interface CameraMove {
   /** Reveal: total offset in output pixels applied to each selected layer. */
   offsetX?: number;
   offsetY?: number;
+  /** Advanced camera controls; angles are degrees, strength is 0..1. */
+  angle?: number;
+  strength?: number;
+  speed?: number;
+  seed?: number;
+  blur?: boolean;
+  focusFrom?: number;
+  focusTo?: number;
+  radius?: number;
+  elevation?: number;
 }
 
 export const moveNames: Record<CameraMoveType, string> = {
@@ -28,6 +46,8 @@ export const moveNames: Record<CameraMoveType, string> = {
   tilt: 'Tilt up / down', zoom: 'Zoom in / out', truck: 'Truck / lateral track',
   pedestal: 'Pedestal', diagonal: 'Diagonal drift', crane: 'Crane / boom',
   tracking: 'Tracking / follow', reveal: 'Reveal move',
+  dutch: 'Dutch tilt / roll', handheld: 'Handheld drift', impact: 'Impact shake', whip: 'Whip pan',
+  dollyZoom: 'Dolly zoom', rackFocus: 'Rack-focus framing', orbit: 'Orbit / arc',
 };
 
 export function validateMoves(scene: CameraSceneConfig) {
@@ -38,11 +58,30 @@ export function validateMoves(scene: CameraSceneConfig) {
     if (!move || typeof move.id !== 'string' || !move.id || ids.has(move.id)) throw new Error('Camera movement IDs must be unique');
     ids.add(move.id);
     if (!Object.hasOwn(moveNames, move.type)) throw new Error('Invalid camera movement');
+    if (move.model !== undefined && move.model !== 2) throw new Error('Unsupported camera movement model');
+    if (move.model === 2 && (move.type === 'push' || move.type === 'pull')) {
+      if (finite(move.travel as number, 'dolly travel') < 0 || move.travel! > .35) throw new Error('Dolly travel must be 0..35%');
+    }
+    if (move.model === 2 && move.type === 'crane') {
+      if (finite(move.lookX as number, 'crane target X') < 0 || move.lookX! > scene.width || finite(move.lookY as number, 'crane target Y') < 0 || move.lookY! > scene.height) throw new Error('Crane target must be inside the scene');
+    }
     for (const field of ['start', 'duration', 'x', 'y', 'scale'] as const) finite(move[field], `movement ${field}`);
     if (move.start < 0 || move.duration <= 0 || move.start + move.duration > scene.totalFrames / scene.fps + 1e-9) throw new Error('Camera movement must fit within the scene duration');
     if (move.x < 0 || move.x > scene.width || move.y < 0 || move.y > scene.height) throw new Error('Camera coordinates must be inside the scene');
     if (move.scale < .25 || move.scale > 4 || (move.type === 'push' && move.scale < 1) || (move.type === 'pull' && move.scale > 1)) throw new Error('Invalid camera movement scale');
     const layerIds = new Set(scene.layers.map(layer => layer.id));
+    if (advancedMoves.includes(move.type)) {
+      if (move.model !== 2) throw new Error('Advanced movements require the virtual camera');
+      const bounded = (value: unknown, label: string, min: number, max: number) => { const n=finite(value,label); if(n<min||n>max) throw new Error(`Invalid ${label}`); };
+      if (move.type === 'dutch') bounded(move.angle,'roll angle',-30,30);
+      if (move.type === 'whip') { bounded(move.angle,'whip angle',-20,20); if(typeof move.blur!=='boolean')throw new Error('Invalid whip blur'); }
+      if (move.type === 'handheld' || move.type === 'impact' || move.type === 'rackFocus') bounded(move.strength,'effect strength',0,1);
+      if (move.type === 'handheld') { bounded(move.speed,'drift speed',.1,5); if(!Number.isInteger(move.seed)||move.seed! < 0||move.seed! > 2147483647)throw new Error('Invalid drift seed'); }
+      if (move.type === 'dollyZoom') bounded(move.travel,'dolly zoom travel',-.25,.25);
+      if (move.type === 'rackFocus') { bounded(move.focusFrom,'starting focus depth',0,1); bounded(move.focusTo,'ending focus depth',0,1); }
+      if (move.type === 'orbit') { bounded(move.angle,'orbit angle',-12,12); bounded(move.radius,'orbit radius',.8,1.2); bounded(move.elevation,'orbit elevation',-.05,.05); }
+      if (move.layerId !== undefined && !layerIds.has(move.layerId)) throw new Error('Advanced movement target layer is missing');
+    }
     if (move.type === 'tracking' && (typeof move.layerId !== 'string' || !layerIds.has(move.layerId))) throw new Error('Tracking needs an existing target layer');
     if (move.type === 'reveal') {
       if (!Array.isArray(move.layerIds) || !move.layerIds.length || new Set(move.layerIds).size !== move.layerIds.length || move.layerIds.some(id => typeof id !== 'string' || !layerIds.has(id))) throw new Error('Reveal needs one or more existing layers');
@@ -71,7 +110,7 @@ export function applyReveals(scene: CameraSceneConfig, layers: Record<string, Po
  */
 export function evaluateMoves(scene: CameraSceneConfig, seconds: number, intensity: number, targets: LayerTransform[] = []) {
   let x = 0, y = 0, scale = 1;
-  for (const move of [...(scene.cameraMoves ?? [])].sort((a, b) => a.start - b.start)) {
+  for (const move of [...(scene.cameraMoves ?? [])].filter(m => m.model !== 2).sort((a, b) => a.start - b.start)) {
     const progress = clamp((seconds - move.start) / move.duration, 0, 1) * intensity;
     const factor = 1 + (move.scale - 1) * progress;
     if (move.type === 'pan' || move.type === 'push' || move.type === 'truck' || move.type === 'diagonal') x += (move.x - scene.width / 2 - x) * progress;

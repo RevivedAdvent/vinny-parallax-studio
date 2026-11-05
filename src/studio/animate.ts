@@ -1,19 +1,22 @@
 import type { CameraSceneConfig } from '../camera/types.ts';
 import { sceneDuration } from '../camera/animation.ts';
-import { moveNames, basicMoves, spatialMoves, type CameraMove, type CameraMoveType } from '../camera/moves.ts';
+import { moveNames, basicMoves, spatialMoves, advancedMoves, type CameraMove, type CameraMoveType } from '../camera/moves.ts';
 import { renderTimeline, updateTimelineTime } from './timeline.ts';
 import { scenePoint, type Point, type View } from './coordinates.ts';
 
 // Moves whose X/Y fields are screen or target coordinates, so a picked point can fill them.
-const pickable:(CameraMoveType|'static')[]=['push','pan','tilt','truck','pedestal','diagonal','crane','tracking'];
+const pickable:(CameraMoveType|'static')[]=['push','pull','zoom','pan','tilt','truck','pedestal','diagonal','crane','tracking','dutch','dollyZoom','orbit'];
 const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const descriptions: Record<CameraMoveType,string> = {
   push:'Move toward a point in the scene.', pull:'Move back to reveal more of the scene.',
-  pan:'Move the camera horizontally to an X coordinate.', tilt:'Move the camera vertically to a Y coordinate.',
-  zoom:'Change magnification around the center without shifting the viewpoint.',
+  pan:'Turn the camera left or right.', tilt:'Turn the camera up or down.',
+  zoom:'Change the lens magnification around an anchor.',
   truck:'Slide the viewpoint sideways to a chosen X position.', pedestal:'Move the viewpoint up or down while keeping the framing level.',
-  diagonal:'Move the viewpoint to a chosen X and Y in one continuous path.', crane:'Rise or descend to reveal more of the scene above or below.',
+  diagonal:'Move the viewpoint to a chosen X and Y in one continuous path.', crane:'Rise or descend on a boom while looking toward a target.',
   tracking:'Keep a chosen layer near a set screen position as the viewpoint moves.', reveal:'Slide selected foreground layers aside to uncover the artwork behind them.',
+  dutch:'Roll the camera around a point.', handheld:'Add subtle, irregular camera drift.', impact:'Add a short, fading shake.',
+  whip:'Turn quickly with optional directional blur.', dollyZoom:'Move the camera while holding a subject’s size.',
+  rackFocus:'Shift visual focus between layer depths.', orbit:'Arc around a subject in the layered scene.',
 };
 
 export function createAnimateWorkspace(options: {
@@ -36,28 +39,42 @@ export function createAnimateWorkspace(options: {
       <button data-preset="static" class="camera-card ${preset==='static'?'selected':''}"><b>Static / locked-off</b><span>No camera movement.</span></button>
       ${basicMoves.map(card).join('')}</div>`;
     $('spatial-moves-targets').innerHTML=`<div class="camera-catalogue">${spatialMoves.map(card).join('')}</div>`;
-    document.querySelectorAll<HTMLButtonElement>('#camera-basic-moves [data-preset], #camera-spatial-moves [data-preset]').forEach(b=>b.onclick=()=>{preset=b.dataset.preset as typeof preset;selected='';render();});
+    $('advanced-moves-targets').innerHTML=`<div class="camera-catalogue">${advancedMoves.map(card).join('')}</div>`;
+    document.querySelectorAll<HTMLButtonElement>('#camera-basic-moves [data-preset], #camera-spatial-moves [data-preset], #camera-advanced-moves [data-preset]').forEach(b=>b.onclick=()=>{preset=b.dataset.preset as typeof preset;selected='';render();});
     const inspector=$('animation-inspector');
     if(preset==='static') {
       inspector.innerHTML='<h3>Static / locked-off</h3><p class="animation-note">Clear camera movement and return to the original framing. Existing layer animations are kept.</p><button id="camera-reset" class="outline">Reset camera movement…</button>';
       $('camera-reset').onclick=()=>{if(!confirm('Clear all camera movement? Layer animations will remain.'))return;const next=structuredClone(cfg);next.tracks=next.tracks.filter(t=>t.target!=='camera');next.animationTracks=(next.animationTracks??[]).filter(t=>t.target!=='camera');next.cameraMoves=[];next.camera.baseZoom=1;next.camera.anchor={x:cfg.width/2,y:cfg.height/2};selected='';void save(next);};
     } else {
       const current=move?.type===preset?move:undefined;
+      const legacy=!!current && current.model!==2;
       const input=(id:string,label:string,value:number,min:number,max:number)=>`<label class="field">${label}<input id="${id}" type="number" required min="${min}" max="${max}" step="any" value="${value}"></label>`;
-      inspector.innerHTML=`<h3>${moveNames[preset]}</h3><p class="animation-note">Coordinates are scene pixels, measured from the top left. Camera movement applies to the entire composition, not individual layers.</p>
+      inspector.innerHTML=`<h3>${moveNames[preset]}</h3><p class="animation-note">Coordinates are scene pixels, measured from the top left. ${legacy?'This saved movement retains its original camera behaviour.':'Depth affects physical camera moves; reveal moves only the selected layers.'}</p>
         <form id="effect-form">
         ${input('effect-start','Start · seconds',current?.start??0,0,sceneDuration(cfg))}
-        ${input('effect-duration','Duration · seconds',current?.duration??Math.min(3,sceneDuration(cfg)),0,sceneDuration(cfg))}
-        ${preset==='push'||preset==='pan'?input('camera-x','Target X · pixels',current?.x??cfg.width/2,0,cfg.width):''}
-        ${preset==='push'||preset==='tilt'?input('camera-y','Target Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
-        ${picked&&pickable.includes(preset)?`<button id="use-picked-point" type="button" class="outline">Use picked point · ${picked.x}, ${picked.y}</button>`:''}
+        ${input('effect-duration','Duration · seconds',current?.duration??Math.min(preset==='whip'?.35:preset==='impact'?.6:3,sceneDuration(cfg)),0,sceneDuration(cfg))}
+        ${preset==='push'||preset==='pan'||(!legacy&&(preset==='pull'||preset==='zoom'))?input('camera-x',preset==='zoom'?'Anchor X · pixels':'Target X · pixels',current?.x??cfg.width/2,0,cfg.width):''}
+        ${preset==='push'||preset==='tilt'||(!legacy&&(preset==='pull'||preset==='zoom'))?input('camera-y',preset==='zoom'?'Anchor Y · pixels':'Target Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
+        ${picked&&pickable.includes(preset)&&!(legacy&&(preset==='pull'||preset==='zoom'))?`<button id="use-picked-point" type="button" class="outline">Use picked point · ${picked.x}, ${picked.y}</button>`:''}
         ${preset==='tracking'?`<label class="field">Target layer<select id="track-layer">${cfg.layers.map(l=>`<option value="${escape(l.id)}" ${l.id===(current?.layerId)?'selected':''}>${escape(l.name)}</option>`).join('')}</select></label>`:''}
         ${preset==='reveal'?`<fieldset class="reveal-layers"><legend>Layers to move aside</legend>${cfg.layers.map(l=>`<label class="field"><span>${escape(l.name)}</span><input type="checkbox" name="reveal-layer" value="${escape(l.id)}" ${(current?.layerIds??[]).includes(l.id)?'checked':''}></label>`).join('')}</fieldset>`:''}
         ${preset==='truck'||preset==='diagonal'||preset==='tracking'?input('camera-x',preset==='tracking'?'Screen X · pixels':'Target X · pixels',current?.x??cfg.width/2,0,cfg.width):''}
-        ${preset==='pedestal'||preset==='diagonal'||preset==='crane'||preset==='tracking'?input('camera-y',preset==='tracking'?'Screen Y · pixels':'Target Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
+        ${preset==='pedestal'||preset==='diagonal'||preset==='crane'||preset==='tracking'?input('camera-y',preset==='tracking'?'Screen Y · pixels':preset==='crane'?'Vertical destination · pixels':'Target Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
+        ${preset==='crane'&&!legacy?input('camera-look-x','Look-at X · pixels',current?.lookX??cfg.width/2,0,cfg.width)+input('camera-look-y','Look-at Y · pixels',current?.lookY??cfg.height/2,0,cfg.height):''}
         ${preset==='reveal'?input('camera-x','Offset X · pixels',current?.offsetX??0,-cfg.width,cfg.width)+input('camera-y','Offset Y · pixels',current?.offsetY??0,-cfg.height,cfg.height):''}
-        ${preset==='push'||preset==='pull'||preset==='zoom'?input('camera-scale','End scale · ×',current?.scale??(preset==='pull'?.8:1.2),preset==='push'?1:.25,preset==='pull'?1:4):''}
-        <p class="animation-note">Moves progress at a constant rate and hold their final position. ${preset==='push'?'Flat artwork cannot produce true perspective change; this move shifts the viewpoint while enlarging the composition.':''}</p>
+        ${['dollyZoom','orbit','rackFocus'].includes(preset)?`<label class="field">${preset==='rackFocus'?'End focus layer (optional)':'Target layer (optional)'}<select id="advanced-layer"><option value="">${preset==='rackFocus'?'Use ending depth':'Use scene point'}</option>${cfg.layers.map(l=>`<option value="${escape(l.id)}" ${l.id===current?.layerId?'selected':''}>${escape(l.name)}</option>`).join('')}</select></label>`:''}
+        ${['dutch','dollyZoom','orbit'].includes(preset)?input('camera-x',preset==='dutch'?'Rotation center X · pixels':'Scene point X · pixels',current?.x??cfg.width/2,0,cfg.width)+input('camera-y',preset==='dutch'?'Rotation center Y · pixels':'Scene point Y · pixels',current?.y??cfg.height/2,0,cfg.height):''}
+        ${preset==='dollyZoom'||preset==='orbit'?'<p class="animation-note">A selected layer replaces the scene point as the target.</p>':preset==='rackFocus'?'<p class="animation-note">A selected layer replaces the ending depth. Blur is applied per layer.</p>':''}
+        ${['dutch','whip','orbit'].includes(preset)?input('camera-angle','Angle · degrees (− / +)',current?.angle??(preset==='orbit'?8:preset==='whip'?18:12),preset==='orbit'?-12:preset==='whip'?-20:-30,preset==='orbit'?12:preset==='whip'?20:30):''}
+        ${['handheld','impact','rackFocus'].includes(preset)?input('camera-strength','Intensity · %',100*(current?.strength??(preset==='handheld'?.3:.6)),0,100):''}
+        ${preset==='handheld'?input('camera-speed','Movement speed · ×',current?.speed??1,.1,5)+input('camera-seed','Variation seed',current?.seed??42,0,2147483647):''}
+        ${preset==='whip'?`<label class="field">Directional blur<input type="checkbox" id="camera-blur" ${current?.blur===false?'':'checked'}></label>`:''}
+        ${preset==='dollyZoom'?input('camera-travel','Travel · % (− out / + in)',100*(current?.travel??.15),-25,25):''}
+        ${preset==='rackFocus'?input('focus-from','Starting depth',current?.focusFrom??0,0,1)+input('focus-to','Ending depth',current?.focusTo??1,0,1):''}
+        ${preset==='orbit'?input('camera-radius','End radius · %',100*(current?.radius??1),80,120)+input('camera-elevation','Elevation · %',100*(current?.elevation??0),-5,5):''}
+        ${!legacy&&(preset==='push'||preset==='pull')?input('camera-travel','Travel · %',100*(current?.travel??.2),0,35):''}
+        ${preset==='zoom'||(legacy&&(preset==='push'||preset==='pull'))?input('camera-scale','End scale · ×',current?.scale??(preset==='pull'?.8:1.2),preset==='push'?1:.25,preset==='pull'?1:4):''}
+        <p class="animation-note">${preset==='handheld'||preset==='impact'?'This effect fades to zero at the end.':preset==='whip'?'The whip accelerates and settles; blur is temporary.':'Moves hold their final position.'}</p>
         <div class="row-actions"><button class="outline" type="submit">${current?'Update movement':'Add movement'}</button>${current?'<button type="button" id="cancel-edit">Cancel edit</button>':''}</div></form>`;
       if(current)$('cancel-edit').onclick=()=>{selected='';render();};
       updatePickedButton();
@@ -69,7 +86,18 @@ export function createAnimateWorkspace(options: {
           if(!confirm('Replace existing legacy camera tracks with independent camera movements? Layer animation will remain.'))return;
           next.tracks=next.tracks.filter(t=>t.target!=='camera');next.animationTracks=(next.animationTracks??[]).filter(t=>t.target!=='camera');
         }
-        const m:CameraMove={id:current?.id??crypto.randomUUID(),type:preset as CameraMoveType,start:value('effect-start',0),duration:value('effect-duration',0),x:value('camera-x',cfg.width/2),y:value('camera-y',cfg.height/2),scale:value('camera-scale',1)};
+        const m:CameraMove={...current,id:current?.id??crypto.randomUUID(),type:preset as CameraMoveType,start:value('effect-start',0),duration:value('effect-duration',0),x:value('camera-x',current?.x??cfg.width/2),y:value('camera-y',current?.y??cfg.height/2),scale:value('camera-scale',current?.scale??(preset==='push'?1.2:preset==='pull'?.8:1))};
+        if(!current)m.model=2;
+        if(!legacy&&(preset==='push'||preset==='pull'))m.travel=value('camera-travel',20)/100;
+        if(!legacy&&preset==='crane'){m.lookX=value('camera-look-x',cfg.width/2);m.lookY=value('camera-look-y',cfg.height/2);}
+        if(['dutch','whip','orbit'].includes(preset))m.angle=value('camera-angle',0);
+        if(['handheld','impact','rackFocus'].includes(preset))m.strength=value('camera-strength',0)/100;
+        if(preset==='handheld'){m.speed=value('camera-speed',1);m.seed=value('camera-seed',42);}
+        if(preset==='whip')m.blur=$<HTMLInputElement>('camera-blur').checked;
+        if(preset==='dollyZoom')m.travel=value('camera-travel',15)/100;
+        if(preset==='rackFocus'){m.focusFrom=value('focus-from',0);m.focusTo=value('focus-to',1);}
+        if(preset==='orbit'){m.radius=value('camera-radius',100)/100;m.elevation=value('camera-elevation',0)/100;}
+        if(['dollyZoom','orbit','rackFocus'].includes(preset))m.layerId=$<HTMLSelectElement>('advanced-layer').value||undefined;
         if(preset==='tracking')m.layerId=$<HTMLSelectElement>('track-layer').value;
         if(preset==='reveal'){m.layerIds=[...document.querySelectorAll<HTMLInputElement>('input[name=reveal-layer]:checked')].map(i=>i.value);m.offsetX=value('camera-x',0);m.offsetY=value('camera-y',0);m.x=cfg.width/2;m.y=cfg.height/2;}
         next.cameraMoves=current?(next.cameraMoves??[]).map(old=>old.id===current.id?m:old):[...(next.cameraMoves??[]),m];
@@ -85,11 +113,11 @@ export function createAnimateWorkspace(options: {
   }
   function updatePickedButton() {
     if(!picked||!pickable.includes(preset))return;
-    const form=$('effect-form');if(!form)return;
+    const form=$('effect-form'), target=$('camera-look-y')||$('camera-y')||$('camera-x');if(!form||!target)return;
     let button=$<HTMLButtonElement>('use-picked-point');
-    if(!button){button=document.createElement('button');button.id='use-picked-point';button.type='button';button.className='outline';const field=($('camera-y')||$('camera-x')).closest('label');field?.insertAdjacentElement('afterend',button);}
+    if(!button){button=document.createElement('button');button.id='use-picked-point';button.type='button';button.className='outline';target.closest('label')?.insertAdjacentElement('afterend',button);}
     button.textContent=`Use picked point · ${picked.x}, ${picked.y}`;
-    button.onclick=()=>{if($('camera-x'))$<HTMLInputElement>('camera-x').value=String(picked!.x);if($('camera-y'))$<HTMLInputElement>('camera-y').value=String(picked!.y);};
+    button.onclick=()=>{if($('camera-look-x')){$<HTMLInputElement>('camera-look-x').value=String(picked!.x);$<HTMLInputElement>('camera-look-y').value=String(picked!.y);}else{if($('camera-x'))$<HTMLInputElement>('camera-x').value=String(picked!.x);if($('camera-y'))$<HTMLInputElement>('camera-y').value=String(picked!.y);}};
   }
   function updateTime() {
     const clock=$('timeline-clock');if(!clock)return;
@@ -108,12 +136,15 @@ export function createAnimateWorkspace(options: {
     button.onclick=()=>{if(picking){stopPicker();return;}picking=true;button.setAttribute('aria-pressed','true');host.classList.add('picking');overlay.hidden=false;show('Hover over the image; click to select a point.');};
     function point(e:MouseEvent){
       if(!picking||!(e.target instanceof HTMLCanvasElement))return null;
-      const cfg=options.getScene();return scenePoint({x:e.clientX,y:e.clientY},e.target.getBoundingClientRect(),cfg.width,cfg.height,options.getCameraView());
+      const cfg=options.getScene();
+      const view=(preset==='tracking'||preset==='zoom'||preset==='dutch')?{x:0,y:0,scale:1}:options.getCameraView();
+      return scenePoint({x:e.clientX,y:e.clientY},e.target.getBoundingClientRect(),cfg.width,cfg.height,view);
     }
     host.addEventListener('pointermove',e=>{
       const p=point(e);if(!p)return;const cfg=options.getScene(),inside=p.x>=0&&p.x<=cfg.width&&p.y>=0&&p.y<=cfg.height;
       const legacy=cfg.tracks.some(t=>t.target==='camera')||(cfg.animationTracks??[]).some(t=>t.target==='camera');
-      show(`X: ${p.x}, Y: ${p.y} px${inside?' · Click to select':' · Outside scene'}${legacy?' · Legacy camera tracks may affect accuracy':''}`);
+      const perspective=!!options.getCameraView().virtualCamera && preset!=='tracking' && preset!=='zoom' && preset!=='dutch';
+      show(`X: ${p.x}, Y: ${p.y} px${inside?' · Click to select':' · Outside scene'}${legacy?' · Legacy camera tracks may affect accuracy':perspective?' · Middle-depth plane':''}`);
     });
     host.addEventListener('pointerleave',()=>{if(picking)show(picked?`Picked X: ${picked.x}, Y: ${picked.y}. Hover to inspect another point.`:'Hover over the image; click to select a point.');});
     host.addEventListener('click',e=>{const p=point(e);if(!p)return;const cfg=options.getScene();if(p.x<0||p.x>cfg.width||p.y<0||p.y>cfg.height){show('Point is outside the scene; choose a point inside it.');return;}picked=p;show(`Picked X: ${p.x}, Y: ${p.y}. Use this point in Camera Movements.`);updatePickedButton();});

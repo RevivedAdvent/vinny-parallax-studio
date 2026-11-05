@@ -1,5 +1,6 @@
 import type { AnimationTrack } from './animation.ts';
 import type { CameraMove } from './moves.ts';
+import type { VirtualCamera } from './virtual-projection.ts';
 export type Property = 'x' | 'y' | 'zoom' | 'roll';
 export type Easing = 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out' | 'overshoot_settle' | 'hold' | 'seeded_noise';
 export interface Limits { min: number; max: number }
@@ -64,6 +65,8 @@ export interface CameraState extends Pose {
   uniformDelta: number;
   dollyDelta: number;
   compositeCamera: { x: number; y: number; scale: number };
+  /** Present only when a scene contains version-2 camera moves. */
+  virtualCamera?: VirtualCamera;
   layers: Record<string, Pose>;
 }
 export interface LayerTransform {

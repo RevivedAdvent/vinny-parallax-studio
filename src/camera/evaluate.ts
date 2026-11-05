@@ -4,6 +4,7 @@ import { channel, legacyChannel, keyframeValue, neutralValue, propertyBounds } f
 import { validateScene } from './validate.ts';
 import { applyReveals, evaluateMoves } from './moves.ts';
 import { projectLayers } from './project.ts';
+import { evaluateVirtualMoves } from './virtual-moves.ts';
 
 const neutralPose = (): Pose => ({ x: 0, y: 0, zoom: 1, roll: 0, opacity: 1 });
 export function trackValue(track: Track, frame: number, fps: number) {
@@ -83,6 +84,9 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     const rotation = authored.has(`layer:${id}/rotation`) ? { min: -180, max: 180 } : bounds.roll;
     pose.roll = clamp(pose.roll, rotation.min, rotation.max);
     pose.opacity = clamp(pose.opacity, 0, 1);
+  }
+  if ((config.cameraMoves ?? []).some(move => move.model === 2)) {
+    result.virtualCamera = evaluateVirtualMoves(config, seconds, amount, projectLayers(config, result));
   }
   return result;
 }

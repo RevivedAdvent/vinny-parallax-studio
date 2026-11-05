@@ -37,14 +37,18 @@ try {
   await page.locator('#effect-form button[type=submit]').click();
   await page.waitForFunction(n=>window.cameraStudio.getState().config.cameraMoves?.length===n,count+1);
  }
- await add('push',{'effect-duration':2,'camera-x':1200,'camera-y':700,'camera-scale':1.5});
- await add('pull',{'effect-start':2,'effect-duration':2,'camera-scale':.8});
+ await add('push',{'effect-duration':2,'camera-x':1200,'camera-y':700,'camera-travel':20});
+ await add('pull',{'effect-start':2,'effect-duration':2,'camera-travel':20});
  await add('pan',{'effect-start':4,'effect-duration':2,'camera-x':700});
  await add('tilt',{'effect-start':6,'effect-duration':2,'camera-y':400});
  await add('zoom',{'effect-start':8,'effect-duration':2,'camera-scale':1.3});
+ await page.evaluate(()=>window.cameraStudio.renderTime(0));const neutral=await page.evaluate(()=>window.cameraStudio.capture().png);
  await page.evaluate(()=>window.cameraStudio.renderTime(1));
- let result=await state();assert.equal(result.state.compositeCamera.x,120);assert.equal(result.state.compositeCamera.y,80);assert.equal(result.state.compositeCamera.scale,1.25);
- assert.equal(result.transforms[0].scale,result.transforms[1].scale,'depth does not change the camera scale');
+ let result=await state();assert.ok(result.state.virtualCamera.z>0);assert.equal(result.state.virtualCamera.focalLength,3840);
+ assert.ok(result.transforms[1].scale>result.transforms[0].scale,'dolly projects nearer artwork larger');
+ const forward=await page.evaluate(()=>window.cameraStudio.capture().png);assert.notEqual(forward,neutral,'artwork changes during dolly');
+ await page.evaluate(()=>window.cameraStudio.renderTime(3));await page.evaluate(()=>window.cameraStudio.renderTime(1));
+ assert.equal(await page.evaluate(()=>window.cameraStudio.capture().png),forward,'backward seeking renders identically');
  await page.locator('[data-tab="effects"]').click();assert.equal(await page.locator('.effect-list-item').count(),5);
  assert.match(await page.locator('#effects-list').innerText(),/Push-in \/ dolly-in/);
  await page.locator('.effect-list-item').nth(2).getByRole('button',{name:'Edit'}).click();
@@ -54,7 +58,7 @@ try {
  await page.locator('[data-tab="effects"]').click();await page.locator('.effect-list-item').last().getByRole('button',{name:'Delete'}).click();
  await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===4);
  await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
- await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();assert.equal(result.config.cameraMoves.length,4);assert.equal(result.config.cameraMoves.find(m=>m.type==='pan').x,300);
+ await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();assert.equal(result.config.cameraMoves.length,4);assert.equal(result.config.cameraMoves.find(m=>m.type==='pan').x,300);assert.ok(result.config.cameraMoves.every(m=>m.model===2));
  await page.locator('[data-tab="story"]').click();await page.locator('#scene-duration').fill('3');await page.locator('#scene-duration').dispatchEvent('change');
  assert.equal((await state()).config.totalFrames,600,'cannot shorten past movement endpoint');
  await page.locator('[data-tab="animate"]').click();await page.locator('#camera-basic-moves summary').click();await page.locator('[data-preset="static"]').click();await page.locator('#camera-reset').click();
@@ -84,5 +88,36 @@ try {
  await page.locator('[data-preset="static"]').click();await page.locator('#camera-reset').click();
  await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===0);
  assert.equal((await state()).config.animationTracks[0].id,'legacy-layer');
- assert.deepEqual(errors,[]);console.log('Camera movement browser workflow passed: create, preview, list, edit, delete, save, duration guard, legacy replacement and reset.');
+ // All spatial controls can create, persist, and edit real version-2 movements.
+ await page.locator('#camera-spatial-moves summary').click();
+ await add('truck',{'camera-x':1200});await add('pedestal',{'camera-y':700});
+ await add('diagonal',{'camera-x':1200,'camera-y':700});
+ await add('crane',{'camera-y':700,'camera-look-x':900,'camera-look-y':500});
+ await add('tracking',{'camera-x':900,'camera-y':500});
+ await page.locator('[data-preset="reveal"]').click();await page.locator('input[name=reveal-layer]').last().check();
+ await page.locator('#camera-x').fill('150');await page.locator('#camera-y').fill('-50');
+ await page.locator('#effect-form button[type=submit]').click();
+ await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===6);
+ await page.locator('[data-tab="effects"]').click();await page.locator('.effect-list-item').nth(3).getByRole('button',{name:'Edit'}).click();
+ assert.equal(await page.locator('#camera-look-x').inputValue(),'900');await page.locator('#camera-look-x').fill('800');
+ await page.locator('#effect-form button[type=submit]').click();await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves.find(m=>m.type==='crane')?.lookX===800);
+ await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
+ await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();
+ if(result.config.id!=='legacy-scene'){await page.locator('#project-list').getByRole('button',{name:'Legacy (imported)',exact:true}).click();await page.waitForFunction(()=>{try{return window.cameraStudio.getState().config.id==='legacy-scene';}catch{return false;}});result=await state();}
+ assert.equal(result.config.cameraMoves.length,6);assert.equal(result.config.cameraMoves.find(m=>m.type==='crane').lookX,800);assert.ok(result.config.cameraMoves.every(m=>m.model===2));
+ // Editing an old composite movement must not convert it to the virtual model.
+ const old=structuredClone(result.config);old.id='old-move-scene';old.tracks=[];old.cameraMoves=[{id:'old-move',type:'push',start:0,duration:2,x:1100,y:600,scale:1.4}];
+ const oldProject={schemaVersion:1,id:'old-move-project',title:'Old movement',createdAt:now,updatedAt:now,settings:{width:old.width,height:old.height,fps:old.fps},scenes:[old]};
+ await page.locator('#project-file').setInputFiles({name:'old.story.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(oldProject))});
+ await page.waitForFunction(()=>{try{return window.cameraStudio.getState().config.id==='old-move-scene';}catch{return false;}});
+ await page.locator('[data-tab="effects"]').click();await page.locator('.effect-list-item').first().getByRole('button',{name:'Edit'}).click();
+ assert.match(await page.locator('#animation-inspector').innerText(),/original camera behaviour/);
+ await page.locator('#camera-scale').fill('1.5');await page.locator('#effect-form button[type=submit]').click();
+ await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves[0].scale===1.5);
+ result=await state();assert.equal(result.config.cameraMoves[0].model,undefined);
+ await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
+ await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();
+ if(result.config.id!=='old-move-scene'){await page.locator('#project-list').getByRole('button',{name:'Old movement (imported)',exact:true}).click();await page.waitForFunction(()=>{try{return window.cameraStudio.getState().config.id==='old-move-scene';}catch{return false;}});result=await state();}
+ assert.equal(result.config.cameraMoves[0].model,undefined);assert.equal(result.config.cameraMoves[0].scale,1.5);
+ assert.deepEqual(errors,[]);console.log('Camera movement browser workflow passed: all movement controls, preview, edit, delete, persistence and legacy compatibility.');
 } finally {await runtime.close();}

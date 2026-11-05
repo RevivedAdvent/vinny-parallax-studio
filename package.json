@@ -26,6 +26,8 @@
     "export:video": "node scripts/export-video.mjs",
     "test:animation": "node --test tests/animation.test.mjs",
     "test:camera-moves-browser": "node scripts/check-camera-moves-browser.mjs",
+    "test:camera-virtual-browser": "node scripts/check-camera-virtual-browser.mjs",
+    "test:camera-advanced-browser": "node scripts/check-camera-advanced-browser.mjs",
     "test:timeline-browser": "node scripts/check-timeline-browser.mjs",
     "test:playback-browser": "node scripts/check-playback-browser.mjs",
     "test:animation-browser": "node scripts/check-animation-browser.mjs",

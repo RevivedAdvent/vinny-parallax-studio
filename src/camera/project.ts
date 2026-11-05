@@ -1,7 +1,8 @@
 import type { CameraSceneConfig, CameraState, LayerTransform } from './types.ts';
+import { calibration, planePoint, projectPoint, type Point2, type VirtualCamera } from './virtual-projection.ts';
 
-/** x/y are camera-space pixels: moving camera right displaces artwork left.
- * All layers share the anchor for scale and roll. No perspective/orbit is simulated.
+/** Legacy projection stage: x/y are camera-space pixels, moving artwork in the opposite direction.
+ * All layers share the anchor for scale and roll. This stage itself is affine.
  * Combined scale = baseZoom * (1 + uniformDelta + depth*dollyDelta) * localZoom.
  */
 export function projectLayers(config: CameraSceneConfig, state: CameraState): LayerTransform[] {
@@ -20,4 +21,23 @@ export function projectLayers(config: CameraSceneConfig, state: CameraState): La
       y: config.height / 2 + (y - config.height / 2 - camera.y) * camera.scale,
       scale: camera.scale * baseZoom * factor * (layer.scale ?? 1) * local.zoom, roll: state.roll + (layer.rotation ?? 0) + local.roll, opacity: Math.max(0, Math.min(1, (layer.opacity ?? 1) * local.opacity)) };
   });
+}
+
+/** Scene-space corners of the already evaluated sprite, before perspective. */
+export function layerCorners(pose: LayerTransform, width: number, height: number): [Point2, Point2, Point2, Point2] {
+  const c = Math.cos(pose.roll * Math.PI / 180), s = Math.sin(pose.roll * Math.PI / 180);
+  const point = (x: number, y: number) => ({ x: pose.x + pose.scale * (x * c - y * s), y: pose.y + pose.scale * (x * s + y * c) });
+  return [point(-width/2, -height/2), point(width/2, -height/2), point(width/2, height/2), point(-width/2, height/2)];
+}
+
+/** Center and local scale for inspection/tracking; the actual image uses all four corners. */
+export function projectedLayerInfo(config: CameraSceneConfig, pose: LayerTransform, camera: VirtualCamera): LayerTransform | null {
+  if (![pose.x, pose.y, pose.scale, pose.roll].every(Number.isFinite)) return null;
+  const c = calibration(config.width, config.height);
+  const center = projectPoint(camera, planePoint(c, pose.depth, pose), c.focalLength * .1);
+  const radians = pose.roll * Math.PI / 180;
+  const right = projectPoint(camera, planePoint(c, pose.depth, { x: pose.x + pose.scale * Math.cos(radians), y: pose.y + pose.scale * Math.sin(radians) }), c.focalLength * .1);
+  if (!center || !right) return null;
+  const dx = right.x - center.x, dy = right.y - center.y;
+  return { ...pose, x: center.x, y: center.y, scale: Math.hypot(dx, dy), roll: Math.atan2(dy, dx) * 180 / Math.PI };
 }
