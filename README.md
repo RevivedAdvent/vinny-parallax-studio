@@ -34,6 +34,7 @@ npm run build
 npm run test:camera-moves-browser  # requires Playwright Chromium
 npm run test:timeline-browser
 npm run test:atmosphere-browser
+npm run test:export-e2e          # full export proof: both buttons, decoded MP4s, preview parity
 ```
 
 Install the browser with `npx playwright install chromium` if needed. Export checks also require FFmpeg and FFprobe. `npm run test:animation-browser` covers the current camera-move and layer-effect editor (it writes `output/phase3/animation-ui-project.json`; the older `animated-project.json` fixture used by the animation export checks is left untouched). `npm run test:production` needs a fresh `npm run build` and verifies the `dist` render frames match the dev server byte-for-byte plus a smoke test of the built studio UI; it compares against `output/camera-phase1/manifest.json` when that file exists but does not require it.

@@ -69,7 +69,11 @@ export async function exportStoryVideo({ project: raw, sceneId, output, quality 
           if (!source) throw new Error('Scene renderer canvas missing');
           const output = document.createElement('canvas'); output.width = width; output.height = height;
           const context = output.getContext('2d');
-          const scale = Math.max(width / source.width, height / source.height);
+          if (!context) throw new Error('Frame capture requires a 2D canvas context');
+          // Match the studio preview exactly: fit the whole scene inside the video
+          // frame and letterbox the remainder. Cropping to fill would silently cut
+          // artwork for any scene that is not exactly 16:9.
+          const scale = Math.min(width / source.width, height / source.height);
           context.fillStyle = '#000'; context.fillRect(0, 0, width, height);
           context.drawImage(source, (width - source.width * scale) / 2, (height - source.height * scale) / 2, source.width * scale, source.height * scale);
           return output.toDataURL('image/png');
