@@ -197,7 +197,7 @@ try {
   assert.equal(geometry.cardZero, 0, `cards without size: ${JSON.stringify(geometry)}`);
   assert.equal(geometry.rows, 4, 'depth settings plus three effects are listed');
   assert.equal(geometry.rowClipped, 0, `clipped applied rows: ${JSON.stringify(geometry)}`);
-  assert.equal(geometry.buttons, 8, 'Edit and Delete per effect plus depth Edit/Reset');
+  assert.equal(geometry.buttons, 11, 'Edit, Duplicate and Delete per effect plus depth Edit/Reset');
   assert.equal(geometry.buttonHidden, 0, `unreachable buttons: ${JSON.stringify(geometry)}`);
   assert.equal(geometry.inspectorHidden, false, 'inspector stays visible');
   await ui.locator('[data-tab="effects"]').click();

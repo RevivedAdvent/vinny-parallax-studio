@@ -16,9 +16,9 @@ const id = () => crypto.randomUUID();
 export function createProject(title: string): StoryProject {
   const now = new Date().toISOString();
   return { schemaVersion: 1, id: id(), title: title.trim() || 'Untitled Story', createdAt: now, updatedAt: now,
-    settings: { width: 1920, height: 1080, fps: 60 }, scenes: [createScene('Scene 1', 10)] };
+    settings: { width: 1920, height: 1080, fps: 60 }, scenes: [createScene('Scene 1', 30)] };
 }
-export function createScene(title: string, durationSeconds = 10, width = 1920, height = 1080, fps = 60): CameraSceneConfig {
+export function createScene(title: string, durationSeconds = 30, width = 1920, height = 1080, fps = 60): CameraSceneConfig {
   const totalFrames = Math.max(1, Math.round(durationSeconds * fps));
   return { version: 1, id: id(), title, width, height, fps, totalFrames, layers: [], tracks: [],
     camera: { baseZoom: 1, maxRoll: 180, anchor: { x: width / 2, y: height / 2 },
@@ -46,8 +46,12 @@ export function validateProject(value: unknown): StoryProject {
   return p;
 }
 export function exampleProject(): StoryProject {
+  // The example is authored at the studio defaults: 60 fps for 30 seconds.
+  // It deliberately starts with no legacy frame-indexed tracks; new camera
+  // movements and parallax effects are authored from the workspaces.
   const scene: CameraSceneConfig = { ...structuredClone(CAMERA_PROOF), title: 'The Arrival · Example',
+    fps: 60, totalFrames: 1800, tracks: [],
     layers: CAMERA_PROOF.layers.map((layer, order) => ({ ...layer, order, x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, visible: true, width: 1920, height: 1080 })) };
   const now = new Date().toISOString();
-  return { schemaVersion:1, id:'example-vinny-project', title:'The Arrival (Example)', createdAt:now,updatedAt:now,settings:{width:1920,height:1080,fps:24},scenes:[scene] };
+  return { schemaVersion:1, id:'example-vinny-project', title:'The Arrival (Example)', createdAt:now,updatedAt:now,settings:{width:1920,height:1080,fps:60},scenes:[scene] };
 }

@@ -1,3 +1,4 @@
+import type { AtmosphereEffect, AtmosphereState } from './atmosphere.ts';
 import type { AnimationTrack } from './animation.ts';
 import type { CameraMove } from './moves.ts';
 import type { LayerEffect, LayerMask, LayerShadow, LayerWrap, ParallaxSettings, ParticleInstance, DepthScaleSettings, DepthPlane, WarpCorners } from './layer-effects.ts';
@@ -67,9 +68,13 @@ export interface CameraSceneConfig {
   depthPlanes?: DepthPlane[];
   /** Deterministic layer-level animation. Absent or empty means no layer effects. */
   layerEffects?: LayerEffect[];
+  /** Scene-wide environmental effects: fog, haze, light and weather. */
+  atmosphere?: AtmosphereEffect[];
 }
 export interface Pose { x: number; y: number; zoom: number; roll: number; opacity: number }
 export interface CameraState extends Pose {
+  /** Evaluated atmosphere overlays and per-layer adjustments at this time. */
+  atmosphere?: AtmosphereState;
   frame: number;
   uniformDelta: number;
   dollyDelta: number;

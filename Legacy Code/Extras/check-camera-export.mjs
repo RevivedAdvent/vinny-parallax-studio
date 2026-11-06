@@ -3,10 +3,10 @@ import { readFile, writeFile, access, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { CAMERA_PROOF } from '../src/scenes/camera-proof.ts';
-import { compileCamera } from '../src/camera/evaluate.ts';
-import { projectLayers } from '../src/camera/project.ts';
-import { projectRoot } from './runtime.mjs';
+import { CAMERA_PROOF } from '../../src/scenes/camera-proof.ts';
+import { compileCamera } from '../../src/camera/evaluate.ts';
+import { projectLayers } from '../../src/camera/project.ts';
+import { projectRoot } from '../../scripts/runtime.mjs';
 
 const masterDir=resolve(projectRoot,'output/camera-phase1');
 const dir=resolve(projectRoot,process.argv[2]??'output/camera-phase1/export-check');

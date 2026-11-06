@@ -6,6 +6,7 @@ import { applyReveals, evaluateMoves } from './moves.ts';
 import { projectLayers } from './project.ts';
 import { evaluateVirtualMoves } from './virtual-moves.ts';
 import { evaluateLayerEffects } from './layer-effects.ts';
+import { evaluateAtmosphere } from './atmosphere.ts';
 
 const neutralPose = (): Pose => ({ x: 0, y: 0, zoom: 1, roll: 0, opacity: 1 });
 export function trackValue(track: Track, frame: number, fps: number) {
@@ -100,6 +101,16 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     if (delta.warp) (result.layerWarps ??= {})[id] = delta.warp.corners;
     if (delta.particles) (result.layerParticles ??= {})[id] = delta.particles;
     if (delta.wrap) (result.layerWraps ??= {})[id] = delta.wrap;
+  }
+  // Atmosphere layer deltas are framing/visibility adjustments, not camera motion.
+  // They are merged before projection so virtual-camera tracking sees the final pose.
+  result.atmosphere = evaluateAtmosphere(config, seconds, amount);
+  for (const [id, delta] of Object.entries(result.atmosphere.layers)) {
+    const pose = result.layers[id];
+    if (!pose) continue;
+    pose.x += delta.x; pose.y += delta.y;
+    pose.zoom *= delta.scale; pose.roll += delta.rotation;
+    pose.opacity = clamp(pose.opacity * delta.opacity, 0, 1);
   }
   if ((config.cameraMoves ?? []).some(move => move.model === 2)) {
     result.virtualCamera = evaluateVirtualMoves(config, seconds, amount, projectLayers(config, result));

@@ -9,6 +9,11 @@
 [data-workspace=animate] .viewer,[data-workspace=effects] .viewer{height:100%;width:100%;min-height:0;max-height:none;aspect-ratio:auto;display:flex;align-items:center;justify-content:center}
 [data-workspace=animate] #canvas-host,[data-workspace=effects] #canvas-host{width:100%;height:100%;display:flex;align-items:center;justify-content:center;aspect-ratio:auto;min-width:0;min-height:0}
 [data-workspace=animate] #canvas-host canvas,[data-workspace=effects] #canvas-host canvas{display:block;max-width:100%;max-height:100%;object-fit:contain}
+.animate-pane .panel-heading{margin-top:14px}
+#animation-effects-list .parallax-item,#parallax-effects-list .parallax-item{flex-wrap:wrap;margin-bottom:6px}
+#animation-effects-list .parallax-item>div:first-child,#parallax-effects-list .parallax-item>div:first-child{flex:1 1 100%}
+#animation-effects-list .parallax-actions,#parallax-effects-list .parallax-actions{flex:1 1 100%;justify-content:flex-end;margin-top:2px}
+#animation-effects-list .parallax-item.selected{border-color:var(--gold);background:#293024}
 #camera-basic-moves,#camera-spatial-moves,#camera-advanced-moves{margin-top:16px}#camera-basic-moves summary,#camera-spatial-moves summary,#camera-advanced-moves summary{cursor:pointer;list-style:none}#camera-basic-moves summary::-webkit-details-marker,#camera-spatial-moves summary::-webkit-details-marker,#camera-advanced-moves summary::-webkit-details-marker{display:none}#camera-basic-moves summary::after,#camera-spatial-moves summary::after,#camera-advanced-moves summary::after{content:"▸";float:right}#camera-basic-moves[open] summary::after,#camera-spatial-moves[open] summary::after,#camera-advanced-moves[open] summary::after{content:"▾"}#camera-basic-moves[open] summary,#camera-spatial-moves[open] summary,#camera-advanced-moves[open] summary{margin-bottom:10px}
 .camera-catalogue{display:grid;gap:8px}
 .camera-card{text-align:left;border:1px solid #414a3c;border-left:3px solid #8a9a7a;border-radius:5px;padding:10px;background:#161d17}

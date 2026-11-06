@@ -35,6 +35,36 @@ Expand **ENVIRONMENTAL AND DEPTH EFFECTS** for seven more techniques. They use t
 
 Newer tile wraps, particle systems and warps replace older ones for the same layer; a shadow can coexist with them because it is a separate attached element. Neither environmental effects nor depth planes reorder artwork. Reveal masks remain frame-space, so a moving layer can slide beneath a stationary wipe.
 
+## Atmosphere and visual effects
+
+Open the **Atmosphere** tab and expand **ATMOSPHERE AND DEPTH** or **NATURE AND WEATHER**. All fourteen effects are stored on the scene as `atmosphere` entries with an id, kind, start, duration, loop flag, seed, target and effect-specific parameters. They reuse the existing layer evaluator, PixiJS renderer, depth model and filter cache; there is no second clock or timeline.
+
+**Atmosphere and depth**
+
+- **Ground fog and drifting mist** draws one to four soft translucent bands over the lower scene, inserted between the far and mid artwork planes where possible. Set density, opacity, edge softness, coverage, height, drift and period.
+- **Distant atmospheric haze** desaturates, tints and lifts planes below a depth limit. The transition feather follows the stored Arrange depth; a whole-scene target is supported.
+- **Volumetric-style light rays** is a stylized 2D/2.5D approximation, **not** true volumetric lighting. It draws a bounded fan of additive shafts from an origin with direction, count, width, length, spread, opacity and slow variation.
+- **Dust, pollen and spores** emits seeded particles at several depths with size, opacity, speed, direction, lifetime, irregularity and region controls.
+- **Depth-based blur** adds a focus-plane blur proportional to each plane's distance from a chosen depth, with an in-focus range, falloff and optional animated focus pull. It composes with camera rack focus and is capped at 24 px.
+- **Gentle light variation** slowly modulates scene brightness and optionally tints selected layers, using smooth periodic and seeded noise terms rather than flicker.
+- **Foreground defocus** softens only planes nearer than a depth threshold; the amount can animate over the clip.
+
+**Nature and weather**
+
+- **Leaves / petals drifting** uses a selected layer's artwork as the particle texture. Count, size, opacity, speed, rotation, lifetime, depth spread and region are bounded.
+- **Foliage in wind** rotates selected layers around a pivot with gusts, phase spread and a small secondary push. It does not modify the stored Arrange rotation.
+- **Clouds and sunlight** drifts selected layers with optional periodic oscillation, opacity and scale variation, and dims scene brightness on a separate sunlight period.
+- **Rain / droplets** uses layered angled streaks with depth-dependent speed and an optional foreground droplet amount.
+- **Snow or ash** shares the seeded particle field; ash is slower, dimmer, greyer and rotates.
+- **Fireflies and insects** adds sparse additive glow points with independent pulses and a halo pass.
+- **Waterfall mist / ripples** emits rising mist puffs from a region plus expanding elliptical ripple rings along its lower edge.
+
+Atmosphere clips appear in the main **Timeline** under grouped **Atmosphere**, **Particles**, **Weather** and **Lighting** lanes. Looping clips are striped and labelled; the clip itself remains finite. Bars seek to the clip start, Edit opens the same inspector, Delete removes the effect, and the timing form retimes without changing any other parameter. Expanding or shortening a scene, or changing its frame rate, is rejected when an atmosphere endpoint would fall outside the new scene.
+
+Evaluation is random-access and deterministic: every position, opacity and variation derives from the absolute timestamp, the effect seed and fixed-index hashes. There is no `Math.random()`, mutable PRNG state or accumulated frame delta. Particle counts, ray counts, ripple counts and blur are bounded, textures are cached per preview renderer, and sprites, filters and containers are disposed when artboards reload or the scene closes. Malformed effects and references to deleted layers are dropped on load; scene-targeted effects survive with no layers. Atmosphere settings are saved, imported and exported with the project.
+
+Run `npm test` and `npm run test:atmosphere-browser` for the evaluator and real-artwork preview checks, in addition to the Camera, Parallax and Timeline browser suites.
+
 ## Stylized and advanced moves
 
 Expand **STYLIZED AND ADVANCED MOVES** to add:

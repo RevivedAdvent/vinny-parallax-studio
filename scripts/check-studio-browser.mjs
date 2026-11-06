@@ -229,10 +229,10 @@ try {
   await page.locator('.project-menu summary').click();
   await page.locator('#example').click();
   await page.waitForFunction(() => {
-    try { return document.querySelectorAll('.layer-row').length === 4 && window.cameraStudio?.getState().config.tracks.some(t => t.id === 'core-depth-push'); }
+    try { return document.querySelectorAll('.layer-row').length === 4 && window.cameraStudio?.getState().config.tracks.length === 0; }
     catch { return false; }
   }, null, {timeout:60000});
-  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.tracks.some(t => t.id === 'core-depth-push' && t.projection === 'dolly')), true, 'example animation data is loaded without a timeline UI');
+  assert.deepEqual(await page.evaluate(() => { const c=window.cameraStudio.getState().config; return { fps:c.fps, totalFrames:c.totalFrames, tracks:c.tracks.length }; }), { fps:60, totalFrames:1800, tracks:0 }, 'the example loads at 60 fps for 30 seconds with no legacy tracks');
   await page.locator('#scrub').fill('120');  const examplePreview = await page.evaluate(() => window.cameraStudio.capture().png);
   const config={config:structuredClone(await page.evaluate(()=>window.cameraStudio.getState().config)),intensity:1};
   assert.equal(config.config.layers.length,4);assert.equal(config.config.layers.length,4);

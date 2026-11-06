@@ -8,6 +8,12 @@ import type { Point2 } from './virtual-projection.ts';
  * Camera behaviour is untouched: effects write local layer deltas only.
  */
 export type LayerEffectKind = 'drift' | 'transform' | 'framing' | 'fade' | 'reveal' | 'wind' | 'float' | 'ambient' | 'shadow' | 'warp';
+/** Shared labels so the Parallax workspace, its applied list and the timeline agree. */
+export const layerEffectNames: Record<LayerEffectKind, string> = {
+  drift: 'Independent layer drift', transform: 'Layer scale and rotation', framing: 'Foreground framing',
+  fade: 'Layer fade', reveal: 'Animated mask reveal', wind: 'Sway / Wind', float: 'Floating / Bobbing',
+  ambient: 'Ambient Looping', shadow: 'Shadow Movement', warp: 'Perspective Warp',
+};
 export type DriftAxis = 'x' | 'y' | 'xy';
 export type DriftMotion = 'sway' | 'noise';
 export type FrameDirection = 'left' | 'right' | 'top' | 'bottom';

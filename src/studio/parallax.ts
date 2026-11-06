@@ -78,7 +78,7 @@ export function createParallaxWorkspace(options: {
       rows.push(`<div class="parallax-item"><div><b>Multi-plane Camera</b><small>${cfg.depthPlanes!.length} plane${cfg.depthPlanes!.length === 1 ? '' : 's'} · ${escape(cfg.depthPlanes!.map(plane => `${plane.name} ${pct(plane.depth)}%`).join(', '))}</small></div><div class="parallax-actions"><button data-planes-edit>Edit</button><button data-planes-reset>Reset</button></div></div>`);
     }
     for (const effect of [...(cfg.layerEffects ?? [])].sort((a, b) => a.start - b.start)) {
-      rows.push(`<div class="parallax-item ${editing === effect.id ? 'selected' : ''}"><div><b>${names[effect.kind]}</b><small>${escape(layerNames(cfg, effect.layerIds))} · ${effect.start.toFixed(2)}s + ${effect.duration.toFixed(2)}s</small></div><div class="parallax-actions"><button data-effect-edit="${effect.id}">Edit</button><button data-effect-delete="${effect.id}">Delete</button></div></div>`);
+      rows.push(`<div class="parallax-item ${editing === effect.id ? 'selected' : ''}"><div><b>${names[effect.kind]}</b><small>${escape(layerNames(cfg, effect.layerIds))} · ${effect.start.toFixed(2)}s + ${effect.duration.toFixed(2)}s</small></div><div class="parallax-actions"><button data-effect-edit="${effect.id}">Edit</button><button data-effect-duplicate="${effect.id}">Duplicate</button><button data-effect-delete="${effect.id}">Delete</button></div></div>`);
     }
     $('parallax-effects-list').innerHTML = rows.length ? rows.join('') : '<p class="parallax-empty">No layer effects yet. Choose a technique above.</p>';
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-edit]').forEach(button => button.onclick = () => { preset = 'depth'; editing = ''; render(); });
@@ -98,6 +98,14 @@ export function createParallaxWorkspace(options: {
     });
     for (const button of $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-effect-edit]')) {
       button.onclick = () => { const effect = cfg.layerEffects?.find(e => e.id === button.dataset.effectEdit); if (!effect) return; preset = effect.kind; editing = effect.id; render(); };
+    }
+    for (const button of $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-effect-duplicate]')) {
+      button.onclick = () => {
+        const effect = cfg.layerEffects?.find(e => e.id === button.dataset.effectDuplicate); if (!effect) return;
+        const copy = { ...structuredClone(effect), id: crypto.randomUUID() };
+        const next = structuredClone(cfg); next.layerEffects = [...(next.layerEffects ?? []), copy];
+        preset = copy.kind; editing = copy.id; void save(next);
+      };
     }
     for (const button of $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-effect-delete]')) {
       button.onclick = () => {
@@ -130,7 +138,7 @@ export function createParallaxWorkspace(options: {
     const length = effect?.duration ?? Math.min(3, duration);
     const end = Math.max(0, duration - start);
     const timing = input('parallax-start', 'Start · seconds', start, 0, Math.max(0, duration - .01)) + input('parallax-duration', 'Duration · seconds', length, .01, Math.max(.01, end));
-    const action = `<div class="row-actions"><button class="outline" type="submit">${effect ? 'Update effect' : 'Add effect'}</button>${effect ? '<button type="button" id="parallax-cancel">Cancel edit</button>' : ''}</div>`;
+    const action = `<div class="row-actions"><button class="outline" type="submit">${effect ? 'Update effect' : 'Add effect'}</button>${effect ? '<button type="button" id="parallax-add-another">＋ Add another</button><button type="button" id="parallax-cancel">Cancel edit</button>' : ''}</div><p class="animation-note">The same effect can be added more than once; each copy keeps its own timing.</p>`;
     if (preset === 'depthScale') {
       const settings = cfg.depthScale;
       const influence = settings?.influence ?? {};
@@ -359,6 +367,7 @@ export function createParallaxWorkspace(options: {
     }
     inspector.innerHTML = `<h3>${names[preset]}</h3><p class="animation-note">Timing is measured from the start of the scene and holds its endpoint.</p><form id="parallax-form">${fields}<p class="animation-note">Coordinates are scene pixels, measured from the top left.</p>${action}</form>`;
     if (effect) $('parallax-cancel').onclick = () => { editing = ''; render(); };
+    if (effect) $('parallax-add-another').onclick = () => { editing = ''; render(); };
     if (preset === 'warp') {
       $<HTMLButtonElement>('warp-neutral').onclick = () => {
         const neutral = [[-100, -100], [100, -100], [100, 100], [-100, 100]];
@@ -403,5 +412,12 @@ export function createParallaxWorkspace(options: {
     if (clock) clock.textContent = `${options.getTime().toFixed(2)}s / ${sceneDuration(options.getScene()).toFixed(2)}s`;
   }
 
-  return { render, updateTime };
+  /** Open a specific applied effect, used by the Timeline workspace's Edit action. */
+  function open(effectId: string) {
+    const effect = (options.getScene().layerEffects ?? []).find(e => e.id === effectId);
+    if (!effect) return;
+    preset = effect.kind; editing = effect.id; render();
+  }
+
+  return { render, updateTime, open };
 }

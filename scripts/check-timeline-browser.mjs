@@ -11,6 +11,9 @@ try {
  await page.locator('[data-tab="arrange"]').click();
  await page.locator('#asset-files').setInputFiles(resolve('test-images/01-background.png'));
  await page.waitForFunction(()=>window.cameraStudio.getState().config.layers.length===1);
+ await page.locator('[data-tab="story"]').click();
+ await page.locator('#scene-duration').fill('10');await page.locator('#scene-duration').dispatchEvent('change');
+ await page.waitForFunction(()=>window.cameraStudio.getState().config.totalFrames===600);
  await page.locator('[data-tab="animate"]').click();
  await page.locator('#camera-basic-moves summary').click();
  await page.locator('[data-preset="push"]').click();

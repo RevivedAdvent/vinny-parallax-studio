@@ -29,8 +29,8 @@ try {
   await page.locator('[data-tab="export"]').click();
 
   const cases = [
-    { button: '#export-current', status: '#current-status', link: '#current-download', scope: 'current', frames: 600, seconds: 10 },
-    { button: '#export-all', status: '#all-status', link: '#all-download', scope: 'all', frames: 600, seconds: 10 },
+    { button: '#export-current', status: '#current-status', link: '#current-download', scope: 'current', frames: 1800, seconds: 30 },
+    { button: '#export-all', status: '#all-status', link: '#all-download', scope: 'all', frames: 1800, seconds: 30 },
   ];
   for (const testCase of cases) {
     await page.locator(testCase.button).click();

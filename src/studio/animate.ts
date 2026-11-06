@@ -21,7 +21,7 @@ const descriptions: Record<CameraMoveType,string> = {
 
 export function createAnimateWorkspace(options: {
   getScene:()=>CameraSceneConfig; getSceneKey:()=>string; getTime:()=>number; getCameraView:()=>View; seek:(seconds:number)=>void;
-  commit:(scene:CameraSceneConfig)=>Promise<void>; notify:(message:string)=>void; openCamera:()=>void;
+  commit:(scene:CameraSceneConfig)=>Promise<void>; notify:(message:string)=>void; openCamera:()=>void; openParallax:(effectId:string)=>void; openAtmosphere:(effectId:string)=>void;
 }) {
   let preset:CameraMoveType|'static'='push', selected='', sceneId='', picking=false;
   let picked:Point|null=null;
@@ -75,8 +75,9 @@ export function createAnimateWorkspace(options: {
         ${!legacy&&(preset==='push'||preset==='pull')?input('camera-travel','Travel · %',100*(current?.travel??.2),0,35):''}
         ${preset==='zoom'||(legacy&&(preset==='push'||preset==='pull'))?input('camera-scale','End scale · ×',current?.scale??(preset==='pull'?.8:1.2),preset==='push'?1:.25,preset==='pull'?1:4):''}
         <p class="animation-note">${preset==='handheld'||preset==='impact'?'This effect fades to zero at the end.':preset==='whip'?'The whip accelerates and settles; blur is temporary.':'Moves hold their final position.'}</p>
-        <div class="row-actions"><button class="outline" type="submit">${current?'Update movement':'Add movement'}</button>${current?'<button type="button" id="cancel-edit">Cancel edit</button>':''}</div></form>`;
+        <div class="row-actions"><button class="outline" type="submit">${current?'Update movement':'Add movement'}</button>${current?'<button type="button" id="camera-add-another">＋ Add another</button><button type="button" id="cancel-edit">Cancel edit</button>':''}</div><p class="animation-note">The same movement can be added more than once; each copy keeps its own timing.</p></form>`;
       if(current)$('cancel-edit').onclick=()=>{selected='';render();};
+      if(current)$('camera-add-another').onclick=()=>{selected='';render();};
       updatePickedButton();
       $('effect-form').onsubmit=e=>{
         e.preventDefault();
@@ -104,10 +105,17 @@ export function createAnimateWorkspace(options: {
         selected=m.id;void save(next);
       };
     }
+    renderApplied(cfg);
     renderTimeline({container:$('effects-list'),scene:cfg,time:options.getTime(),seek:options.seek,
       edit:m=>{preset=m.type;selected=m.id;options.openCamera();render();},
       remove:m=>{if(!confirm('Delete this camera movement?'))return;const next=structuredClone(options.getScene());next.cameraMoves=(next.cameraMoves??[]).filter(old=>old.id!==m.id);selected='';void save(next);},
       retime:async(m,start,end)=>{const next=structuredClone(options.getScene()),move=next.cameraMoves?.find(old=>old.id===m.id);if(!move)throw new Error('Movement no longer exists.');move.start=start;move.duration=end-start;await options.commit(next);render();},
+      effectEdit:e=>{options.openParallax(e.id);},
+      effectRemove:e=>{if(!confirm('Delete this layer effect?'))return;const next=structuredClone(options.getScene());next.layerEffects=(next.layerEffects??[]).filter(old=>old.id!==e.id);void save(next);},
+      effectRetime:async(e,start,end)=>{const next=structuredClone(options.getScene()),effect=(next.layerEffects??[]).find(old=>old.id===e.id);if(!effect)throw new Error('Effect no longer exists.');if(start<0||end<=start||end>sceneDuration(next)+1e-9)throw new Error('Effect must fit within the scene duration');effect.start=start;effect.duration=end-start;await options.commit(next);render();},
+      atmosphereEdit:e=>{options.openAtmosphere(e.id);},
+      atmosphereRemove:e=>{if(!confirm('Delete this atmosphere effect?'))return;const next=structuredClone(options.getScene());next.atmosphere=(next.atmosphere??[]).filter(old=>old.id!==e.id);void save(next);},
+      atmosphereRetime:async(e,start,end)=>{const next=structuredClone(options.getScene()),effect=(next.atmosphere??[]).find(old=>old.id===e.id);if(!effect)throw new Error('Atmosphere effect no longer exists.');if(start<0||end<=start||end>sceneDuration(next)+1e-9)throw new Error('Effect must fit within the scene duration');effect.start=start;effect.duration=end-start;await options.commit(next);render();},
     });
     updateTime();
   }
@@ -119,7 +127,18 @@ export function createAnimateWorkspace(options: {
     button.textContent=`Use picked point · ${picked.x}, ${picked.y}`;
     button.onclick=()=>{if($('camera-look-x')){$<HTMLInputElement>('camera-look-x').value=String(picked!.x);$<HTMLInputElement>('camera-look-y').value=String(picked!.y);}else{if($('camera-x'))$<HTMLInputElement>('camera-x').value=String(picked!.x);if($('camera-y'))$<HTMLInputElement>('camera-y').value=String(picked!.y);}};
   }
+  /** Compact list of authored camera movements, mirroring Parallax > Applied Effects. */
+  function renderApplied(cfg:CameraSceneConfig) {
+    const host=$('animation-effects-list');if(!host)return;
+    const moves=[...(cfg.cameraMoves??[])].sort((a,b)=>a.start-b.start);
+    host.innerHTML=moves.length?moves.map(m=>`<div class="parallax-item ${selected===m.id?'selected':''}"><div><b>${moveNames[m.type]}</b><small>${display(m.start)}s + ${display(m.duration)}s${m.layerId?` · ${escape(cfg.layers.find(l=>l.id===m.layerId)?.name??'layer')}`:''}</small></div><div class="parallax-actions"><button data-move-edit="${escape(m.id)}">Edit</button><button data-move-duplicate="${escape(m.id)}">Duplicate</button><button data-move-delete="${escape(m.id)}">Delete</button></div></div>`).join(''):'<p class="parallax-empty">No camera movements yet. Choose a move above.</p>';
+    host.querySelectorAll<HTMLButtonElement>('[data-move-edit]').forEach(b=>b.onclick=()=>{const move=cfg.cameraMoves?.find(m=>m.id===b.dataset.moveEdit);if(!move)return;preset=move.type;selected=move.id;render();});
+    host.querySelectorAll<HTMLButtonElement>('[data-move-duplicate]').forEach(b=>b.onclick=()=>{const move=cfg.cameraMoves?.find(m=>m.id===b.dataset.moveDuplicate);if(!move)return;const next=structuredClone(cfg),copy={...structuredClone(move),id:crypto.randomUUID()};next.cameraMoves=[...(next.cameraMoves??[]),copy];preset=copy.type;selected=copy.id;void save(next);});
+    host.querySelectorAll<HTMLButtonElement>('[data-move-delete]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this camera movement?'))return;const next=structuredClone(cfg);next.cameraMoves=(next.cameraMoves??[]).filter(m=>m.id!==b.dataset.moveDelete);if(selected===b.dataset.moveDelete)selected='';void save(next);});
+  }
+  const display=(n:number)=>String(Number(n.toPrecision(12)));
   function updateTime() {
+    const applied=$('animate-clock');if(applied)applied.textContent=`${options.getTime().toFixed(2)}s / ${sceneDuration(options.getScene()).toFixed(2)}s`;
     const clock=$('timeline-clock');if(!clock)return;
     const seconds=options.getTime(),duration=sceneDuration(options.getScene());
     clock.textContent=`${seconds.toFixed(2)}s / ${duration.toFixed(2)}s`;

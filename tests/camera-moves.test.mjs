@@ -47,6 +47,7 @@ test('validation rejects invalid movement data and project round trips',()=>{
  }
  const s=make();s.cameraMoves=[move('pull',{scale:2})];assert.throws(()=>compileCamera(s));
  s.cameraMoves=[move('pan'),move('pan')];assert.throws(()=>compileCamera(s),/IDs/);
+ const repeated=make();repeated.cameraMoves=[move('pan',{id:'pan-a'}),move('pan',{id:'pan-b'})];assert.equal(compileCamera(repeated).config().cameraMoves.length,2,'the same movement type can be used more than once');
  s.cameraMoves=[move('push')];const p=createProject('Test');p.scenes=[s];assert.deepEqual(validateProject(JSON.parse(JSON.stringify(p))).scenes[0].cameraMoves,s.cameraMoves);
 });
 test('layer transforms and legacy camera animation remain compatible',()=>{

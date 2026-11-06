@@ -1,12 +1,25 @@
-import { Application, Assets, BlurFilter, Container, PerspectiveMesh, Sprite, Texture } from 'pixi.js';
+import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, PerspectiveMesh, Sprite, Texture, type Filter, type ColorMatrix } from 'pixi.js';
 import { compileCamera } from '../camera/evaluate.ts';
 import { layerCorners, projectedLayerInfo, projectLayers } from '../camera/project.ts';
 import { calibration, planePoint, projectPlane, projectPoint, type VirtualCamera } from '../camera/virtual-projection.ts';
 import { focusBlur } from '../camera/advanced-moves.ts';
 import { parallaxCamera, parallaxFactor, resolvedDepth } from '../camera/layer-effects.ts';
 import { LayerMaskView } from './layer-masks.ts';
+import { createAtmosphereView } from './atmosphere-view.ts';
 import { clamp, finite } from '../camera/easing.ts';
 import type { CameraSceneConfig } from '../camera/types.ts';
+
+function tintMatrix(brightness:number,tint:number,amount:number,desaturate:number):ColorMatrix{
+  const [lr,lg,lb]=[.2126,.7152,.0722],s=1-desaturate;
+  const tr=((tint>>16)&255)/255,tg=((tint>>8)&255)/255,tb=(tint&255)/255;
+  const row=(base:number,color:number)=>((1-amount)*(s*base+(1-s)*(base===lr?1:0))+amount*color)*brightness;
+  return [
+    row(lr,tr),s*lg*(1-amount)*brightness,s*lb*(1-amount)*brightness,0,0,
+    s*lr*(1-amount)*brightness,row(lg,tg),s*lb*(1-amount)*brightness,0,0,
+    s*lr*(1-amount)*brightness,s*lg*(1-amount)*brightness,row(lb,tb),0,0,
+    0,0,0,1,0,
+  ] as ColorMatrix;
+}
 
 export interface Coverage { uncoveredPixels: number; fullyTransparentPixels: number; minAlpha: number; bounds: { x:number;y:number;width:number;height:number } | null }
 export async function createCameraScene(host: HTMLElement, input: CameraSceneConfig) {
@@ -16,13 +29,25 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   app.canvas.setAttribute('aria-label','Illustrated story scene preview'); app.canvas.setAttribute('role','img'); host.appendChild(app.canvas);
   const resizeObserver = new ResizeObserver(() => { const bounds=host.getBoundingClientRect(); if(!bounds.width||!bounds.height)return;const scale=Math.min(bounds.width/config.width,bounds.height/config.height);app.canvas.style.width=`${config.width*scale}px`;app.canvas.style.height=`${config.height*scale}px`; });resizeObserver.observe(host);
   const world = new Container(); app.stage.addChild(world);
+  const atmosphereOverlay = new Container(); atmosphereOverlay.label = 'atmosphere-overlay'; app.stage.addChild(atmosphereOverlay);
   let groups: Container[] = [];
   let sprites: Sprite[] = [], meshes: PerspectiveMesh[] = [], focusFilters: (BlurFilter | undefined)[] = [];
+  let atmosphereFilters: (ColorMatrixFilter | undefined)[] = [], sceneBrightnessFilter: ColorMatrixFilter | undefined;
   let maskViews: (LayerMaskView | undefined)[] = [];
   let shadowViews: (Sprite | undefined)[] = [], shadowFilters: (BlurFilter | undefined)[] = [];
   let silhouetteTextures: (Texture | undefined)[] = [];
   let wrapViews: Sprite[][] = [], particleViews: Sprite[][] = [];
   let whipFilter: BlurFilter | undefined;
+  const atmosphereView = createAtmosphereView({
+    world, overlay: atmosphereOverlay,
+    textureFor: id => {
+      const index = config.layers.findIndex(layer => layer.id === id);
+      return index >= 0 ? sprites[index]?.texture : undefined;
+    },
+  });
+  function disposeAtmosphereFilters() {
+    atmosphereFilters.forEach(filter => filter?.destroy()); atmosphereFilters = [];
+  }
   function disposeExtras() {
     shadowViews.forEach(view => view?.destroy()); shadowViews = [];
     shadowFilters.forEach(filter => filter?.destroy()); shadowFilters = [];
@@ -49,6 +74,7 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
     const previous = groups; groups = nextGroups; sprites = nextSprites; meshes = nextMeshes;
     previous.forEach(group => { world.removeChild(group); group.destroy({ children: true }); });
     focusFilters.forEach(filter => filter?.destroy()); focusFilters = [];
+    disposeAtmosphereFilters();
     disposeExtras(); disposeMasks();
   }
   await loadLayers(config.layers);
@@ -126,12 +152,20 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
       sprite.visible=visible&&!useMesh&&!wrap&&!particles; mesh.visible=false; mesh.alpha=pose.opacity;
       sprite.filters=null; mesh.filters=null;
       if(!visible){ disposeShadow(i); disposeWrap(i); disposeParticles(i); return pose; }
-      const blur=focusBlur(resolvedDepth(config,layer.id),camera?.focus);
+      const layerFilters: Filter[] = [];
+      const atmosphere=state.atmosphere?.layers[layer.id];
+      const blur=Math.min(24,focusBlur(resolvedDepth(config,layer.id),camera?.focus)+(atmosphere?.blur??0));
       if(blur>.01) {
         const filter=focusFilters[i]??(focusFilters[i]=new BlurFilter({strength:blur,quality:2,resolution:.5}));
         filter.strength=blur;
-        (useMesh?mesh:sprite).filters=[filter];
+        layerFilters.push(filter);
       }
+      if(atmosphere&&(atmosphere.tintAmount>.002||atmosphere.desaturate>.002||Math.abs(atmosphere.brightness-1)>.002)) {
+        const filter=atmosphereFilters[i]??(atmosphereFilters[i]=new ColorMatrixFilter());
+        filter.matrix=tintMatrix(atmosphere.brightness,atmosphere.tint?parseInt(atmosphere.tint.slice(1),16):0xffffff,Math.min(1,atmosphere.tintAmount),Math.min(1,atmosphere.desaturate));
+        layerFilters.push(filter);
+      }
+      if(layerFilters.length) (useMesh?mesh:sprite).filters=layerFilters;
       const layerCamera=camera?parallaxCamera(camera,parallaxFactor(config,layer.id)):undefined;
       if(useMesh) {
         const corners=layerCorners(pose,sprite.texture.width,sprite.texture.height,warp);
@@ -189,8 +223,18 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
       return perspective&&camera?projectedLayerInfo(config,pose,camera)??pose:pose;
     });
     const motionBlur=camera?.motionBlur??0;
-    if(motionBlur>.01){whipFilter??=new BlurFilter({strengthX:motionBlur,strengthY:0,quality:2,resolution:.5});whipFilter.strengthX=motionBlur;whipFilter.strengthY=0;world.filters=[whipFilter];}
-    else world.filters=null;
+    const worldFilters: Filter[] = [];
+    if(motionBlur>.01){whipFilter??=new BlurFilter({strengthX:motionBlur,strengthY:0,quality:2,resolution:.5});whipFilter.strengthX=motionBlur;whipFilter.strengthY=0;worldFilters.push(whipFilter);}
+    const brightness=state.atmosphere?.sceneBrightness??1;
+    const sceneTint=state.atmosphere?.sceneTint;
+    if(Math.abs(brightness-1)>.002||(sceneTint?.amount??0)>.002){
+      sceneBrightnessFilter??=new ColorMatrixFilter();
+      sceneBrightnessFilter.matrix=tintMatrix(brightness,sceneTint?parseInt(sceneTint.color.slice(1),16):0xffffff,sceneTint?.amount??0,0);
+      worldFilters.push(sceneBrightnessFilter);
+    }
+    world.filters=worldFilters.length?worldFilters:null;
+    atmosphereView.configure(config);
+    if(state.atmosphere) atmosphereView.update(state.atmosphere);
     applyMasks();
     app.renderer.render({container:app.stage});
   }
@@ -222,7 +266,8 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
       warps:Object.fromEntries(config.layers.map(l=>[l.id,state.layerWarps?.[l.id]??null])),
       wraps:Object.fromEntries(config.layers.map(l=>[l.id,state.layerWraps?.[l.id]??null])),
       particles:Object.fromEntries(config.layers.map(l=>[l.id,state.layerParticles?.[l.id]?.length??0])),
+      atmosphere:state.atmosphere?structuredClone(state.atmosphere):null,
       config:structuredClone(config)}),
-    destroy(){resizeObserver.disconnect();disposeMasks();disposeExtras();app.destroy(true,{children:true});focusFilters.forEach(filter=>filter?.destroy());whipFilter?.destroy();}};
+    destroy(){resizeObserver.disconnect();disposeMasks();disposeExtras();disposeAtmosphereFilters();atmosphereView.destroy();sceneBrightnessFilter?.destroy();app.destroy(true,{children:true});focusFilters.forEach(filter=>filter?.destroy());whipFilter?.destroy();}};
 }
 export type CameraScene=Awaited<ReturnType<typeof createCameraScene>>;

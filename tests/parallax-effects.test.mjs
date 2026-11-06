@@ -138,6 +138,15 @@ test('layer effects compose with camera moves and persist through project round 
   assert.equal(state.layerMasks, undefined);
 });
 
+test('the same layer effect kind can be added more than once', () => {
+  const first = { ...effect('drift', { amplitude: 10, speed: 1, motion: 'sway', axis: 'x', phase: 0, seed: 1 }), id: 'drift-a' };
+  const both = scene(); both.layerEffects = [first, { ...structuredClone(first), id: 'drift-b' }];
+  const once = scene(); once.layerEffects = [first];
+  const clean = compileCamera(both).config(), single = compileCamera(once).config();
+  assert.equal(clean.layerEffects.length, 2, 'both copies survive validation');
+  near(evaluateLayerEffects(clean, .25)['l2'].x, evaluateLayerEffects(single, .25)['l2'].x * 2, 1e-9);
+});
+
 test('validation drops missing layers and malformed effects without breaking loading', () => {
   const s = scene(); s.layerEffects = [effect('drift', { amplitude: 5, speed: 1, motion: 'sway', axis: 'x', phase: 0, seed: 1 }), { ...effect('fade', {}), id: 'gone', layerIds: ['missing'] }];
   s.parallax = { strength: 1.2, influence: { missing: 2, l0: 1.5 } };

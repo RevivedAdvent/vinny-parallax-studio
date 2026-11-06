@@ -2,6 +2,7 @@ import type { CameraSceneConfig, Limits, Property } from './types.ts';
 import { validateAnimation } from './animation.ts';
 import { validateMoves } from './moves.ts';
 import { validateLayerEffects } from './layer-effects.ts';
+import { validateAtmosphere } from './atmosphere.ts';
 import { clamp, finite } from './easing.ts';
 
 const properties = ['x', 'y', 'zoom', 'roll'] as const;
@@ -82,5 +83,6 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
   validateAnimation(config);
   validateMoves(config);
   validateLayerEffects(config);
+  validateAtmosphere(config);
   return config;
 }

@@ -9,7 +9,7 @@ try {
   const page=await runtime.browser.newPage({viewport:{width:1440,height:1050}});
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto(runtime.url);await page.waitForFunction(()=>window.cameraStudio?.ready);
-  assert.equal(await page.locator('#scrub').getAttribute('max'),'599');
+  assert.equal(await page.locator('#scrub').getAttribute('max'),'1799');
   await page.locator('#scrub').fill('120');
   assert.equal(await page.evaluate(()=>window.cameraStudio.getState().frame),120);
   assert.equal(await page.locator('#clock').textContent(),'00:02:00');

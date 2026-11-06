@@ -9,7 +9,10 @@ try {
   await page.waitForFunction(() => window.cameraStudio?.ready);
   await page.locator('[data-tab="story"]').click();
   assert.equal(await page.locator('#scene-fps').inputValue(), '60', 'new projects default to 60 FPS');
-  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.totalFrames), 600);
+  assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.totalFrames), 1800, 'new projects default to 30 seconds');
+  await page.locator('#scene-duration').fill('10');
+  await page.locator('#scene-duration').dispatchEvent('change');
+  await page.waitForFunction(() => window.cameraStudio.getState().config.totalFrames === 600);
   await page.locator('#scene-fps').fill('24');
   await page.locator('#scene-fps').dispatchEvent('change');
   await page.waitForFunction(() => window.cameraStudio.getState().config.fps === 24);

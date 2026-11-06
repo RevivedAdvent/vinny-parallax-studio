@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -19,4 +19,13 @@ assert.ok(manifest.frames[2].transforms[0].x < manifest.frames[0].transforms[0].
 assert.ok((await readFile(output)).length>0);
 const blocked=spawnSync(process.execPath,['scripts/export-video.mjs',output,'--config',config],{cwd:new URL('..',import.meta.url),encoding:'utf8',timeout:30000});
 assert.notEqual(blocked.status,0);assert.match(blocked.stderr,/Refusing to overwrite/);
-console.log('Master export passed: independent camera move in a synthetic 3-frame scene, validated H.264 metadata, and overwrite protection.');
+// A frame index outside the scene must be rejected before any rendering starts.
+const invalid=spawnSync(process.execPath,['scripts/render-frames.mjs','--config',config,'--frame',String(scene.totalFrames),'--dir',join(dir,'invalid-frame')],{cwd:new URL('..',import.meta.url),encoding:'utf8',timeout:30000});
+assert.notEqual(invalid.status,0);assert.match(invalid.stderr,/Invalid --frame index/);
+// An incomplete recorded frame sequence must never reach FFmpeg.
+const incomplete=join(dir,'incomplete-frames');await mkdir(incomplete,{recursive:true});
+await writeFile(join(incomplete,'manifest.json'),JSON.stringify({complete:false,config:scene,frames:[]}));
+const blockedIncomplete=spawnSync(process.execPath,['scripts/export-video.mjs',join(dir,'blocked-incomplete.mp4'),'--frames',incomplete],{cwd:new URL('..',import.meta.url),encoding:'utf8',timeout:30000});
+assert.notEqual(blockedIncomplete.status,0);assert.match(blockedIncomplete.stderr,/Incomplete frame sequence/);
+await assert.rejects(access(join(dir,'blocked-incomplete.mp4')));
+console.log('Master export passed: independent camera move in a synthetic 3-frame scene, validated H.264 metadata, overwrite protection, invalid frame index rejection, and blocked incomplete-sequence encoding.');

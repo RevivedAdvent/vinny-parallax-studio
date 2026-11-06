@@ -12,7 +12,6 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*.test.mjs",
     "test:camera-browser": "node scripts/check-camera-browser.mjs",
-    "test:camera-export": "node scripts/check-camera-export.mjs",
     "test:production": "node scripts/check-camera-production.mjs",
     "test:browser": "node scripts/check-studio-browser.mjs",
     "test:export-service": "node --test tests/export-service.test.mjs",
@@ -35,7 +34,9 @@
     "test:animation-export": "node scripts/check-animation-export.mjs",
     "test:animation-export-ui": "node scripts/check-animation-export-ui.mjs",
     "test:real-project": "node scripts/check-real-project-export.mjs",
-    "test:parallax-environmental-browser": "node scripts/check-parallax-environmental-browser.mjs"
+    "test:parallax-environmental-browser": "node scripts/check-parallax-environmental-browser.mjs",
+    "test:atmosphere": "node --test tests/atmosphere.test.mjs",
+    "test:atmosphere-browser": "node scripts/check-atmosphere-browser.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",
