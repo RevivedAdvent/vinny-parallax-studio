@@ -23,12 +23,22 @@ export interface Track {
   holdAfter?: boolean;
   noise?: { seed: number; amplitude: number; frequency: number };
 }
+/** A folder is a stacking group. Layers inside it stay contiguous in draw order. */
+export interface LayerFolder {
+  id: string;
+  name: string;
+  /** Shares the layer order space; a folder sits in the stack wherever this value lands. */
+  order?: number;
+  collapsed?: boolean;
+}
 export interface Layer {
   id: string;
   name: string;
   asset: string;
   depth: number;
   order?: number;
+  /** Absent or empty means the layer sits at the top level of the stack. */
+  folderId?: string;
   x?: number;
   y?: number;
   scale?: number;
@@ -47,6 +57,8 @@ export interface CameraSceneConfig {
   fps: number;
   totalFrames: number;
   layers: Layer[];
+  /** Optional stacking folders. Organisation only; draw order still follows layer.order. */
+  folders?: LayerFolder[];
   camera: {
     baseZoom: number;
     /** Maximum absolute roll permitted by validation; defaults to 3 degrees for version-1 camera proofs. */

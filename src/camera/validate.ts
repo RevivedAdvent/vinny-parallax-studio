@@ -40,6 +40,20 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
     if (config.camera.limits[p].min > neutral || config.camera.limits[p].max < neutral) throw new Error(`camera.${p} limits must include neutral ${neutral}`);
   }
   const ids = new Set<string>();
+  const folderIds = new Set<string>();
+  if (config.folders !== undefined) {
+    if (!Array.isArray(config.folders)) throw new Error('folders must be an array');
+    config.folders = config.folders.filter(folder => folder && typeof folder === 'object');
+    for (const [index, folder] of config.folders.entries()) {
+      if (typeof folder.id !== 'string' || !folder.id || folderIds.has(folder.id)) throw new Error('Folder ids must be nonempty and unique');
+      folderIds.add(folder.id);
+      if (typeof folder.name !== 'string' || !folder.name.trim()) folder.name = `Folder ${index + 1}`;
+      folder.name = folder.name.slice(0, 120);
+      if (folder.order !== undefined && !Number.isFinite(folder.order)) folder.order = index;
+      folder.order ??= index;
+      folder.collapsed = folder.collapsed === true;
+    }
+  }
   for (const [index, layer] of config.layers.entries()) {
     if (!layer.id || ids.has(layer.id)) throw new Error('Layer ids must be nonempty and unique');
     ids.add(layer.id);
@@ -48,6 +62,7 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
     layer.order ??= index; layer.x ??= 0; layer.y ??= 0; layer.scale ??= 1;
     layer.rotation ??= 0; layer.opacity ??= 1; layer.visible ??= true;
     for (const field of ['x','y','scale','rotation','opacity'] as const) finite(layer[field]!, `${layer.id}.${field}`);
+    if (layer.folderId !== undefined && (typeof layer.folderId !== 'string' || !folderIds.has(layer.folderId))) delete layer.folderId;
     if (layer.scale! <= 0 || layer.opacity! < 0 || layer.opacity! > 1) throw new Error(`Invalid transform on ${layer.id}`);
   }
   config.layers.sort((a,b) => a.order! - b.order!);

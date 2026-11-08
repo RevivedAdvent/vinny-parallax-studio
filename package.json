@@ -37,7 +37,8 @@
     "test:real-project": "node scripts/check-real-project-export.mjs",
     "test:parallax-environmental-browser": "node scripts/check-parallax-environmental-browser.mjs",
     "test:atmosphere": "node --test tests/atmosphere.test.mjs",
-    "test:atmosphere-browser": "node scripts/check-atmosphere-browser.mjs"
+    "test:atmosphere-browser": "node scripts/check-atmosphere-browser.mjs",
+    "test:arrange-browser": "node scripts/check-arrange-browser.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",

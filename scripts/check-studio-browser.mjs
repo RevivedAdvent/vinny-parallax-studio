@@ -119,11 +119,7 @@ try {
   assert.equal(await page.evaluate(() => window.cameraStudio.getState().config.layers[1].opacity), 0.5);
   await page.locator('[data-prop="opacity"]').fill('100');
   await page.locator('[data-prop="opacity"]').dispatchEvent('change');
-  await page.locator('[data-prop="depth"]').fill('2');
-  await page.locator('[data-prop="depth"]').dispatchEvent('change');
-  assert.equal(await page.locator('[data-prop="depth"]').inputValue(), '1', 'depth uses validation clamp');
-  await page.locator('[data-prop="depth"]').fill('0.7');
-  await page.locator('[data-prop="depth"]').dispatchEvent('change');
+  assert.equal(await page.locator('[data-prop="depth"]').count(), 0, 'depth moved to the Parallax tab and is gone from Arrange');
   assert.equal(await page.locator('[data-tab="animate"]').count(), 1, 'Animate workspace is available');
   assert.equal(await page.locator('#animation-timeline').isVisible(), false, 'Animate timeline stays out of Arrange');
   assert.equal(await page.locator('#timeline-dock').count(), 0, 'Animation timeline is not rendered');
@@ -190,7 +186,7 @@ try {
   assert.equal(savedProject.scenes[1].totalFrames, 144);
   assert.equal(savedProject.scenes[1].layers.length, 2);
   assert.equal(savedProject.scenes[1].layers[1].x, 120);
-  assert.equal(savedProject.scenes[1].layers[1].depth, 0.7);
+  assert.equal(savedProject.scenes[1].layers[1].depth, 0.5, 'Arrange edits leave the parallax depth untouched');
   assert.equal(savedProject.scenes[1].tracks.length, 1, 'saved animation data persists without a timeline');
   assert.equal(savedProject.scenes[1].tracks[0].id, 'pixel-check-camera-x');
   const editedPreview = first;

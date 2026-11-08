@@ -52,3 +52,32 @@ html,body{height:100%}body{overflow:hidden;background:#111512}#app{height:100vh;
 
 h2,h3,.brand,.panel-heading,.block-title,.timeline-toolbar h2,.project-heading b{font-family:var(--font-title)}
 .frame-readout,.timeline-toolbar span,.coordinate-controls output,#coordinate-readout,#format,.viewer-format,#clock,#duration,.timeline-ruler,.timeline-row small,.scene-summary{font-family:var(--font-mono)}
+
+/* ---- Arrange tab: draggable layer stack and folders ---- */
+.panel-heading .heading-actions{display:flex;align-items:center;gap:8px}
+.layer-row[draggable="true"]{cursor:grab}
+.layer-row.dragging{opacity:.45}
+.layer-row.drop-before{box-shadow:inset 0 2px 0 var(--gold)}
+.layer-row.drop-after{box-shadow:inset 0 -2px 0 var(--gold)}
+.layer-row.drop-into{background:#3a4a2f;box-shadow:inset 0 0 0 1px var(--gold)}
+.folder-group{display:flex;flex-direction:column;gap:4px;border-radius:5px}
+.folder-row{background:#212a21;border:1px solid #2f3a2d;gap:6px;padding:4px 5px}
+.folder-row:hover{border-color:#3b4a37}
+.folder-toggle{width:14px;flex:none;color:var(--muted);font-size:10px;line-height:1}
+.folder-toggle:hover{color:var(--gold)}
+.folder-glyph{flex:none;color:var(--gold);font-size:11px;line-height:1}
+.folder-row .folder-name{font-size:12px;font-weight:600;color:#e2e6d8}
+.folder-count{flex:none;font-family:var(--font-mono);font-size:9.6px;color:var(--muted);background:#161d16;border-radius:8px;padding:1px 6px}
+.delete-folder{color:#c99786;padding:0 2px}
+.delete-folder:hover,.delete-layer:hover{color:#ffb3a1}
+.folder-children{display:flex;flex-direction:column;gap:4px;margin-left:9px;padding-left:8px;border-left:1px solid #2f3a2d}
+.folder-group.collapsed .folder-children{display:none}
+.layer-row.in-folder{padding:4px 5px}
+.folder-empty{margin:2px 2px 2px 0;padding:6px 8px;font-size:10.8px;color:var(--muted);border:1px dashed #37422f;border-radius:4px}
+.layer-tail{display:none;margin-top:6px;padding:7px;font-size:10.8px;color:var(--muted);text-align:center;border:1px dashed #4a5546;border-radius:4px}
+body.dragging-layers .layer-tail{display:block}
+body.dragging-layers .layer-tail:hover{border-color:var(--gold);color:var(--gold)}
+.depth-row{display:flex;align-items:center;gap:8px;flex:1}
+.depth-row input[type=range]{flex:1;min-width:0;accent-color:var(--gold)}
+.depth-row output{font-family:var(--font-mono);font-size:10.8px;color:var(--muted);min-width:42px;text-align:right}
+.panel-heading .heading-actions button{white-space:nowrap}

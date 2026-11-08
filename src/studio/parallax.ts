@@ -213,13 +213,17 @@ export function createParallaxWorkspace(options: {
     }
     if (preset === 'depth') {
       const influence = cfg.parallax?.influence ?? {};
-      inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Parallax scales each layer's camera translation inside the projection, never a screen offset. 100% is neutral; 0% pins a layer to the camera.</p>
+      inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Parallax scales each layer's camera translation inside the projection, never a screen offset. 100% is neutral; 0% pins a layer to the camera. Depth 0 is background, 1 is foreground.</p>
         <label class="field">Parallax strength · %<input id="parallax-strength" type="range" min="0" max="300" step="1" value="${pct(cfg.parallax?.strength ?? 1)}"><output id="parallax-strength-out">${pct(cfg.parallax?.strength ?? 1)}%</output></label>
-        <fieldset class="parallax-layers"><legend>Per-layer influence · %</legend>${cfg.layers.map(layer =>
-          `<label class="field"><span>${escape(layer.name)} <small>depth ${layer.depth.toFixed(2)}</small></span><input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}"></label>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
+        <fieldset class="parallax-layers"><legend>Layer depth and influence</legend>${cfg.layers.map(layer =>
+          `<div class="depth-layer"><div class="depth-layer-head"><span class="depth-name" title="${escape(layer.name)}">${escape(layer.name)}</span><label class="depth-influence">Influence %<input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}"></label></div><div class="depth-row"><span class="depth-label">Depth</span><input id="depth-${layer.id}" type="range" min="0" max="100" step="1" value="${pct(layer.depth)}"><output id="depth-out-${layer.id}">${pct(layer.depth)}%</output></div></div>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
         <div class="row-actions"><button class="outline" type="button" id="parallax-depth-save">Apply depth settings</button><button type="button" id="parallax-depth-reset">Reset to neutral</button></div>`;
       const strength = $<HTMLInputElement>('parallax-strength');
       strength.oninput = () => { $('parallax-strength-out').textContent = `${strength.value}%`; };
+      for (const layer of cfg.layers) {
+        const slider = document.getElementById(`depth-${layer.id}`) as HTMLInputElement | null;
+        if (slider) slider.oninput = () => { const out = document.getElementById(`depth-out-${layer.id}`); if (out) out.textContent = `${slider.value}%`; };
+      }
       $<HTMLButtonElement>('parallax-depth-save').onclick = () => {
         const next = structuredClone(cfg);
         const influenceNext: Record<string, number> = {};
@@ -228,6 +232,11 @@ export function createParallaxWorkspace(options: {
           const value = (field?.valueAsNumber ?? 100) / 100;
           if (!Number.isFinite(value) || value < 0 || value > 3) { options.notify('Influence must be between 0 and 300%'); return; }
           if (value !== 1) influenceNext[layer.id] = value;
+          const depthField = document.getElementById(`depth-${layer.id}`) as HTMLInputElement | null;
+          const depth = depthField ? depthField.valueAsNumber / 100 : layer.depth;
+          if (!Number.isFinite(depth) || depth < 0 || depth > 1) { options.notify('Depth must be between 0 and 100%'); return; }
+          const target = next.layers.find(candidate => candidate.id === layer.id);
+          if (target) target.depth = depth;
         }
         next.parallax = { strength: Math.max(0, Math.min(3, strength.valueAsNumber / 100)), influence: influenceNext };
         void save(next);
