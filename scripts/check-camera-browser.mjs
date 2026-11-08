@@ -22,11 +22,12 @@ try {
   ]);
   await page.waitForFunction(()=>window.cameraStudio.getState().config.layers.length===2);
   const layerId=await page.evaluate(()=>window.cameraStudio.getState().config.layers[1].id);
-  const depth=page.locator('[data-prop="depth"]');await depth.fill('0.8');await depth.dispatchEvent('change');
-  await page.waitForFunction(id=>window.cameraStudio.getState().config.layers.find(l=>l.id===id).depth===0.8,layerId);
-  const visibility=page.locator('.layer-row').first().getByRole('checkbox',{name:'Show layer'});
-  await visibility.uncheck();await page.waitForFunction(id=>window.cameraStudio.getState().visible[id]===false,layerId);
-  await visibility.check();await page.waitForFunction(id=>window.cameraStudio.getState().visible[id]===true,layerId);
+  // Arrange no longer edits depth; the imported value remains available to Parallax.
+  assert.equal(await page.locator('[data-prop="depth"]').count(),0);
+  const importedDepth=await page.evaluate(id=>window.cameraStudio.getState().config.layers.find(l=>l.id===id).depth,layerId);
+  const visibility=page.locator('.layer-row').first().locator('.eye-toggle');
+  await visibility.click();await page.waitForFunction(id=>window.cameraStudio.getState().visible[id]===false,layerId);
+  await visibility.click();await page.waitForFunction(id=>window.cameraStudio.getState().visible[id]===true,layerId);
 
   await page.locator('[data-tab="animate"]').click();
   await page.locator('#camera-basic-moves summary').click();
@@ -57,7 +58,7 @@ try {
   await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
   await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);
   const saved=await page.evaluate(()=>window.cameraStudio.getState().config);
-  assert.equal(saved.layers.length,2);assert.equal(saved.layers.find(l=>l.id===layerId).depth,0.8);
+  assert.equal(saved.layers.length,2);assert.equal(saved.layers.find(l=>l.id===layerId).depth,importedDepth);
   assert.equal(saved.cameraMoves.length,1);assert.equal(saved.cameraMoves[0].type,'push');
   await page.screenshot({path:resolve(dir,'studio-desktop.png'),fullPage:true});
   const geometry=[];

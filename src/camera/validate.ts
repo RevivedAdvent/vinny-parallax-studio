@@ -63,6 +63,9 @@ export function validateScene(input: CameraSceneConfig): CameraSceneConfig {
     layer.rotation ??= 0; layer.opacity ??= 1; layer.visible ??= true;
     for (const field of ['x','y','scale','rotation','opacity'] as const) finite(layer[field]!, `${layer.id}.${field}`);
     if (layer.folderId !== undefined && (typeof layer.folderId !== 'string' || !folderIds.has(layer.folderId))) delete layer.folderId;
+    // Locking is Arrange-only state. Keep it absent by default so existing
+    // projects and render output stay byte-identical.
+    if (layer.locked !== undefined) layer.locked = layer.locked === true;
     if (layer.scale! <= 0 || layer.opacity! < 0 || layer.opacity! > 1) throw new Error(`Invalid transform on ${layer.id}`);
   }
   config.layers.sort((a,b) => a.order! - b.order!);

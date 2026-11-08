@@ -45,6 +45,8 @@ export interface Layer {
   rotation?: number;
   opacity?: number;
   visible?: boolean;
+  /** Arrange-only: locked layers stay selectable but cannot be moved, resized or rotated. */
+  locked?: boolean;
   width?: number;
   height?: number;
 }

@@ -258,6 +258,13 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
     setIntensity(value:number){intensity=clamp(finite(value,'intensity'),0,1);renderTime(frame/config.fps);},
     setVisible(id:string,visible:boolean){const index=config.layers.findIndex(l=>l.id===id);if(index<0)throw new Error(`Unknown layer ${id}`);config.layers[index].visible=visible;sprites[index].visible=visible;renderTime(frame/config.fps);},
     getCameraView:()=>({...state.compositeCamera, virtualCamera:state.virtualCamera}),
+    /** Read-only snapshot for the Arrange overlay: no clones of atmosphere or mask state. */
+    getAdjustView:()=>{const camera=state.virtualCamera,cal=calibration(config.width,config.height);return {width:config.width,height:config.height,
+      camera:{...state.compositeCamera,virtualCamera:camera},
+      roll:state.roll,uniformDelta:state.uniformDelta,dollyDelta:state.dollyDelta,
+      perspective:!!camera&&(camera.x!==0||camera.y!==0||camera.z!==0||camera.yaw!==0||camera.pitch!==0||camera.roll!==0||camera.focalLength!==cal.focalLength||camera.principal.x!==config.width/2||camera.principal.y!==config.height/2),
+      layers:config.layers.map((layer,index)=>{const pose=transforms[index];return {id:layer.id,x:pose?.x??0,y:pose?.y??0,scale:pose?.scale??1,roll:pose?.roll??0,opacity:pose?.opacity??1,depth:pose?.depth??layer.depth,visible:layer.visible??true,locked:layer.locked===true,
+        width:layer.width??sprites[index]?.texture.width??0,height:layer.height??sprites[index]?.texture.height??0};})};},
     getState:()=>({frame,intensity,state:structuredClone(state),transforms:structuredClone(transforms),
       layerBlur:Object.fromEntries(config.layers.map(l=>[l.id,focusBlur(resolvedDepth(config,l.id),state.virtualCamera?.focus)])),
       spriteAlpha:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].alpha])),
