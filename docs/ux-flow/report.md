@@ -1,5 +1,13 @@
 # UX Flow Critique — 2026-11-08
 
+## Implementation Status (2026-11-08)
+Proposals 1–3 were implemented and verified after this critique:
+- **One export action**: scope radios (Current scene / All scenes), one `Export scene|story` button, automatic download, and a visible "Download again" link. Export flushes the autosave first.
+- **Applied lists collapsible**: APPLIED EFFECTS is a collapsed `<details>` block above the catalogues in Camera Movements, Parallax and Atmosphere, with a gold diamond icon, effect count badge and time readout so it is distinct from catalogue sections. Lists scroll internally when opened and take no space when closed.
+- **Autosave**: edits persist 700 ms after the last commit (deferred while a pointer is held), `Save now` is secondary, and the header reports Saved locally / Saving / Save failed. Silent saves do not rebuild panels.
+
+Verified with unit tests (147 pass) and browser checks: studio, base browser, arrange, camera, atmosphere, parallax, timeline, animation, animation-export-ui, export-ui, export-e2e. See `output/user-review/export-1400.png`, `export-1100.png`, `atmosphere-pane-2.png`.
+
 ## Run Summary
 | Metric | Value |
 |--------|-------|

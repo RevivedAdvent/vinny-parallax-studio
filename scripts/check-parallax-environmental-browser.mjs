@@ -131,6 +131,7 @@ try {
   await ui.locator('#asset-files').setInputFiles([resolve('test-images/01-background.png'), resolve('test-images/04-layer 3.png')]);
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layers.length === 2);
   await ui.locator('[data-tab="parallax"]').click();
+  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), false, 'the original six techniques are a collapsed dropdown');
   await ui.locator('#parallax-layer-effects summary').click();
   assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), true, 'the original six techniques expand');
@@ -183,6 +184,7 @@ try {
   await ui.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved locally');
   await ui.reload(); await ui.waitForFunction(() => window.cameraStudio?.ready);
   await ui.locator('[data-tab="parallax"]').click();
+  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   const persisted = (await ui.evaluate(() => window.cameraStudio.getState())).config;
   assert.equal(persisted.depthScale.near, 1.35, 'depth scale persists with the scene');
   assert.equal(persisted.depthPlanes[0].name, 'Midground', 'plane names persist');

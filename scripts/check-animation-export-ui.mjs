@@ -21,10 +21,12 @@ try {
  await page.locator('[data-tab="export"]').click();
  const results=[];
  for(const [scope,frames] of [['current',300],['all',420]]) {
-  await page.locator(`#export-${scope}`).click();assert.equal(await page.locator(`#export-${scope}`).isDisabled(),true);
-  await page.waitForFunction(scope=>/Ready|failed/.test(document.querySelector(`#${scope}-status`).textContent),scope,{timeout:600000});
-  assert.match(await page.locator(`#${scope}-status`).textContent(),/^Ready/);
-  const event=page.waitForEvent('download');await page.locator(`#${scope}-download`).click();const download=await event;
+  await page.locator(`input[name="export-scope"][value="${scope}"]`).check();
+  const event=page.waitForEvent('download',{timeout:600000});
+  await page.locator('#export').click();assert.equal(await page.locator('#export').isDisabled(),true);
+  await page.waitForFunction(()=>/Ready|failed/.test(document.querySelector('#export-status').textContent),null,{timeout:600000});
+  assert.match(await page.locator('#export-status').textContent(),/^Ready/);
+  const download=await event;
   const file=resolve(`output/phase3/ui-${scope}.mp4`);await download.saveAs(file);
   const probe=spawnSync('ffprobe',['-v','error','-count_frames','-show_entries','stream=codec_name,width,height,pix_fmt,avg_frame_rate,nb_read_frames:format=duration','-of','json',file],{encoding:'utf8'});assert.equal(probe.status,0,probe.stderr);const data=JSON.parse(probe.stdout),stream=data.streams[0];
   assert.equal(stream.codec_name,'h264');assert.equal(stream.width,1920);assert.equal(stream.height,1080);assert.equal(stream.avg_frame_rate,'60/1');assert.equal(stream.pix_fmt,'yuv420p');assert.equal(Number(stream.nb_read_frames),frames);

@@ -54,6 +54,8 @@ export function createAtmosphereWorkspace(options: {
         <div><b>${escape(atmosphereNames[effect.kind])}</b><small>${escape(atmosphereGroups[effect.kind])} · ${escape(atmosphereTargetLabel(cfg, effect))} · ${effect.start.toFixed(2)}s + ${effect.duration.toFixed(2)}s${effect.loop !== false ? ' · loop' : ''}</small></div>
         <div class="parallax-actions"><button type="button" data-atmos-edit="${effect.id}">Edit</button><button type="button" data-atmos-copy="${effect.id}">Duplicate</button><button type="button" data-atmos-delete="${effect.id}">Delete</button></div>
       </div>`).join('') : '<p class="parallax-empty">No atmosphere effects yet. Choose one above.</p>';
+    const appliedCount = $('atmosphere-count');
+    if (appliedCount) appliedCount.textContent = String(effects.length);
     host.querySelectorAll<HTMLButtonElement>('[data-atmos-edit]').forEach(button => button.onclick = () => {
       const effect = cfg.atmosphere?.find(e => e.id === button.dataset.atmosEdit);
       if (!effect) return;

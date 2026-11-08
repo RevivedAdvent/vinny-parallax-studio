@@ -81,6 +81,8 @@ export function createParallaxWorkspace(options: {
       rows.push(`<div class="parallax-item ${editing === effect.id ? 'selected' : ''}"><div><b>${names[effect.kind]}</b><small>${escape(layerNames(cfg, effect.layerIds))} · ${effect.start.toFixed(2)}s + ${effect.duration.toFixed(2)}s</small></div><div class="parallax-actions"><button data-effect-edit="${effect.id}">Edit</button><button data-effect-duplicate="${effect.id}">Duplicate</button><button data-effect-delete="${effect.id}">Delete</button></div></div>`);
     }
     $('parallax-effects-list').innerHTML = rows.length ? rows.join('') : '<p class="parallax-empty">No layer effects yet. Choose a technique above.</p>';
+    const appliedCount = $('parallax-count');
+    if (appliedCount) appliedCount.textContent = String(rows.length);
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-edit]').forEach(button => button.onclick = () => { preset = 'depth'; editing = ''; render(); });
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-scale-edit]').forEach(button => button.onclick = () => { preset = 'depthScale'; editing = ''; render(); });
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-planes-edit]').forEach(button => button.onclick = () => { preset = 'planes'; editing = ''; render(); });

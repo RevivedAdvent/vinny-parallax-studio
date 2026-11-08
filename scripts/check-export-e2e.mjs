@@ -94,13 +94,14 @@ try {
   const sceneStarts = [0, 120, 180];
   for (const [scope, frames] of [['current', 120], ['all', 240]]) {
     console.log(`Starting UI ${scope} export…`);
-    await page.locator(`#export-${scope}`).click();
-    assert.equal(await page.locator(`#export-${scope}`).isDisabled(), true);
-    await page.waitForFunction(scope => !document.querySelector(`#${scope}-download`).hidden
-      || /failed/i.test(document.querySelector(`#${scope}-status`).textContent), scope, { timeout: 900000 });
-    const message = await page.locator(`#${scope}-status`).innerText();
+    await page.locator(`input[name="export-scope"][value="${scope}"]`).check();
+    const pending = page.waitForEvent('download', { timeout: 900000 });
+    await page.locator('#export').click();
+    assert.equal(await page.locator('#export').isDisabled(), true);
+    await page.waitForFunction(() => !document.querySelector('#export-download').hidden
+      || /failed/i.test(document.querySelector('#export-status').textContent), null, { timeout: 900000 });
+    const message = await page.locator('#export-status').innerText();
     assert.match(message, /^Ready \u00b7/, `${scope}: ${message}\n${serviceLog}`);
-    const pending = page.waitForEvent('download'); await page.locator(`#${scope}-download`).click();
     const download = await pending, file = resolve(out, `${scope}.mp4`); await download.saveAs(file);
     const probed = spawnSync(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-count_frames',
       '-show_entries', 'stream=codec_name,width,height,pix_fmt,avg_frame_rate,nb_read_frames:format=duration', '-of', 'json', file], { encoding: 'utf8' });
@@ -162,11 +163,12 @@ try {
     buffer: Buffer.from(JSON.stringify(broken)) });
   await page.waitForFunction(() => { try { return window.cameraStudio.getState().config.layers.length > 0; } catch { return false; } }, null, { timeout: 60000 });
   await page.locator('[data-tab="export"]').click();
-  await page.locator('#export-current').click();
-  await page.waitForFunction(() => /Export failed/.test(document.querySelector('#current-status').textContent), null, { timeout: 300000 });
-  assert.match(await page.locator('#current-status').innerText(), /Export failed\. Unable to load .*file does not exist/);
-  assert.equal(await page.locator('#export-current').isDisabled(), false, 'the export button recovers after a failure');
-  assert.equal(await page.locator('#current-download').isHidden(), true, 'no download link is offered for a failed export');
+  await page.locator('input[name="export-scope"][value="current"]').check();
+  await page.locator('#export').click();
+  await page.waitForFunction(() => /Export failed/.test(document.querySelector('#export-status').textContent), null, { timeout: 300000 });
+  assert.match(await page.locator('#export-status').innerText(), /Export failed\. Unable to load .*file does not exist/);
+  assert.equal(await page.locator('#export').isDisabled(), false, 'the export button recovers after a failure');
+  assert.equal(await page.locator('#export-download').isHidden(), true, 'no download link is offered for a failed export');
   assert.equal(errors.filter(message => !/404 \(Not Found\)/.test(message)).length, 0, `unexpected browser errors: ${errors.join(' | ')}`);
   const missing = await fetch(`http://127.0.0.1:${port}/api/export`, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ project: { scenes: [{ ...broken.scenes[0], layers: [{ ...broken.scenes[0].layers[0], asset: 'blob:http://127.0.0.1/x' }] }] } }) });

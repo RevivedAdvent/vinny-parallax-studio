@@ -49,15 +49,17 @@ try {
   await page.locator('[data-tab="export"]').click();
 
   const modes = [
-    { name: 'current', button: '#export-current', status: '#current-status', link: '#current-download', frames: expectedScenes[0].frames },
-    { name: 'all', button: '#export-all', status: '#all-status', link: '#all-download', frames: expectedFrames },
+    { name: 'current', scope: 'current', frames: expectedScenes[0].frames },
+    { name: 'all', scope: 'all', frames: expectedFrames },
   ];
   for (const mode of modes) {
-    await page.locator(mode.button).click();
-    await page.waitForFunction(sel => /Ready|failed/.test(document.querySelector(sel).textContent), mode.status, { timeout: 1200000 });
-    const message = await page.locator(mode.status).textContent();
+    await page.locator(`input[name="export-scope"][value="${mode.scope}"]`).check();
+    const downloadPromise = page.waitForEvent('download', { timeout: 1200000 });
+    await page.locator('#export').click();
+    await page.waitForFunction(() => /Ready|failed/.test(document.querySelector('#export-status').textContent), null, { timeout: 1200000 });
+    const message = await page.locator('#export-status').textContent();
     assert.match(message, /^Ready/, `${mode.name} export: ${message}`);
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.locator(mode.link).click()]);
+    const download = await downloadPromise;
     const file = resolve(dir, `${mode.name}.mp4`);
     await download.saveAs(file);
     assert.ok((await stat(file)).size > 10000, `${mode.name} MP4 is not empty`);

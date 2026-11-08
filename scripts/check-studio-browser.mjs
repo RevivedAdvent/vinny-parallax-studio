@@ -150,15 +150,24 @@ try {
   await page.locator('#scrub').fill('42');
   const second = await page.evaluate(() => window.cameraStudio.capture().png);
   assert.equal(first, second, 'same frame produces identical PNG');
-  const savedBeforePersist = await page.evaluate(async () => {
-    const db = await new Promise(resolve => { const request = indexedDB.open('storystudio-projects', 1); request.onsuccess = () => resolve(request.result); });
-    return await new Promise(resolve => { const request = db.transaction('projects', 'readonly').objectStore('projects').getAll(); request.onsuccess = () => resolve(request.result.filter(item => item.title === 'My New Story').sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0]?.scenes[1]?.tracks ?? null); });
+  await page.locator('[data-tab="story"]').click();
+  await page.locator('#scene-title').fill('Autosave check');
+  await page.locator('#scene-title').dispatchEvent('change');
+  await page.locator('#scene-title').press('Tab');
+  const autoSaved = await page.evaluate(async () => {
+    const saved = async () => {
+      const db = await new Promise(resolve => { const request = indexedDB.open('storystudio-projects', 1); request.onsuccess = () => resolve(request.result); });
+      return await new Promise(resolve => { const request = db.transaction('projects', 'readonly').objectStore('projects').getAll(); request.onsuccess = () => resolve(request.result.some(item => item.scenes?.some(scene => scene.title === 'Autosave check'))); });
+    };
+    for (let attempt = 0; attempt < 50; attempt++) { if (await saved()) return true; await new Promise(done => setTimeout(done, 100)); }
+    return false;
   });
-  assert.equal(savedBeforePersist, null, 'unsaved frame edits do not change stored project data');
-  await page.locator('#save').click();
-  await page.waitForFunction(() => document.querySelector('#toast').textContent === 'Project saved locally');
+  assert.equal(autoSaved, true, 'edits save automatically without clicking Save');
   await page.locator('[data-tab="export"]').click();
-  assert.equal(await page.locator('#export-panel button').allTextContents().then(labels => labels.join('|')), 'Export Current Scene|Export All Scenes');
+  assert.equal(await page.locator('#export-panel button').allTextContents().then(labels => labels.join('|')), 'Export scene');
+  await page.locator('input[name="export-scope"][value="all"]').check();
+  assert.equal(await page.locator('#export').textContent(), 'Export story');
+  await page.locator('input[name="export-scope"][value="current"]').check();
   assert.equal(await page.getByText(/Export frame PNG|Download master export config|Transfer portable project/).count(), 0);
   assert.equal(await page.locator('#timeline-dock').count(), 0, 'Timeline is absent in Export workspace');
   assert.equal(await page.locator('.scene-item').count(), 2);

@@ -29,17 +29,19 @@ try {
   await page.locator('[data-tab="export"]').click();
 
   const cases = [
-    { button: '#export-current', status: '#current-status', link: '#current-download', scope: 'current', frames: 1800, seconds: 30 },
-    { button: '#export-all', status: '#all-status', link: '#all-download', scope: 'all', frames: 1800, seconds: 30 },
+    { scope: 'current', frames: 1800, seconds: 30 },
+    { scope: 'all', frames: 1800, seconds: 30 },
   ];
   for (const testCase of cases) {
-    await page.locator(testCase.button).click();
-    assert.equal(await page.locator(testCase.button).isDisabled(), true, `${testCase.scope} button disables while running`);
-    await page.waitForFunction(sel => /Ready|failed/.test(document.querySelector(sel).textContent), testCase.status, { timeout: 240000 });
-    const message = await page.locator(testCase.status).textContent();
+    await page.locator(`input[name="export-scope"][value="${testCase.scope}"]`).check();
+    const downloadPromise = page.waitForEvent('download', { timeout: 300000 });
+    await page.locator('#export').click();
+    assert.equal(await page.locator('#export').isDisabled(), true, `${testCase.scope} export disables while running`);
+    await page.waitForFunction(() => /Ready|failed/.test(document.querySelector('#export-status').textContent), null, { timeout: 240000 });
+    const message = await page.locator('#export-status').textContent();
     assert.match(message, /^Ready/, `${testCase.scope} export succeeds: ${message}`);
-    assert.equal(await page.locator(testCase.button).isDisabled(), false, `${testCase.scope} button re-enabled`);
-    const download = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.locator(testCase.link).click()]).then(([d]) => d);
+    assert.equal(await page.locator('#export').isDisabled(), false, `${testCase.scope} export re-enabled`);
+    const download = await downloadPromise;
     const file = resolve(dir, download.suggestedFilename());
     await download.saveAs(file);
     assert.ok((await stat(file)).size > 1000, 'downloaded MP4 is not empty');

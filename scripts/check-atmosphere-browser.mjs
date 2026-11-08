@@ -88,6 +88,7 @@ try {
   const labels = await studio.locator('.workspace-tab').allInnerTexts();
   assert.deepEqual(labels, ['Story', 'Arrange', 'Camera Movements', 'Parallax', 'Atmosphere', 'Timeline', 'Export'], 'Atmosphere sits between Parallax and Timeline');
   await studio.locator('[data-tab="atmosphere"]').click();
+  await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   assert.equal(await studio.locator('.atmosphere-pane').isVisible(), true);
   await studio.locator('#atmosphere-depth-effects summary').click();
   await studio.locator('#atmosphere-weather-effects summary').click();
@@ -99,6 +100,7 @@ try {
   await studio.locator('#asset-files').setInputFiles(resolve('test-images/01-background.png'));
   await studio.waitForFunction(() => window.cameraStudio.getState().config.layers.length === 1);
   await studio.locator('[data-tab="atmosphere"]').click();
+  await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   const names = {
     fog: 'Ground fog and drifting mist', haze: 'Distant atmospheric haze', rays: 'Volumetric-style light rays',
     dust: 'Dust, pollen and spores', depthBlur: 'Depth-based blur', light: 'Gentle light variation', defocus: 'Foreground defocus',
@@ -168,6 +170,7 @@ try {
   await studio.reload();
   await studio.waitForFunction(() => window.cameraStudio?.ready);
   await studio.locator('[data-tab="atmosphere"]').click();
+  await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   await studio.waitForFunction(() => /No atmosphere effects yet|Dust, pollen and spores/.test(document.querySelector('#atmosphere-effects-list').innerText));
   const saved = await studio.evaluate(() => window.cameraStudio.getState().config.atmosphere ?? []);
   assert.equal(saved.length, 2, 'atmosphere survives save and reload');
@@ -179,6 +182,7 @@ try {
   await studio.locator('.timeline-row[data-atmos] [data-atmos-delete]').first().click();
   await studio.waitForFunction(() => (window.cameraStudio.getState().config.atmosphere ?? []).length === 1);
   await studio.locator('[data-tab="atmosphere"]').click();
+  await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   await studio.locator('[data-atmos-delete]').first().click();
   await studio.waitForFunction(() => (window.cameraStudio.getState().config.atmosphere ?? []).length === 0);
   await studio.locator('[data-tab="effects"]').click();

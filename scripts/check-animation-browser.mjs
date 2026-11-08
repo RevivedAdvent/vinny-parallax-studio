@@ -40,6 +40,7 @@ try {
   const waitEffects=async count=>page.waitForFunction(count=>(window.cameraStudio.getState().config.layerEffects??[]).length===count,count);
 
   await page.locator('[data-tab="animate"]').click();
+  await page.evaluate(()=>{const d=document.getElementById('applied-camera');if(d)d.open=true;});
   await page.locator('#camera-basic-moves summary').click();
 
   // Camera movements: preset selection alone must not author anything.
@@ -76,9 +77,11 @@ try {
   await panForm.locator('button[type=submit]').click();
   await page.waitForFunction(id=>{const m=window.cameraStudio.getState().config.cameraMoves.find(m=>m.id===id);return m&&Math.abs(m.start-1)<1e-9&&Math.abs(m.duration-2)<1e-9;},pan.id);
   await page.locator('[data-tab="animate"]').click();
+  await page.evaluate(()=>{const d=document.getElementById('applied-camera');if(d)d.open=true;});
 
   // Parallax layer effects: drift (x/y), transform (scale/rotation) and fade (opacity).
   await page.locator('[data-tab="parallax"]').click();
+  await page.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   await page.locator('#parallax-layer-effects summary').click();
   const setLayer=async(id)=>page.locator('#parallax-layer').selectOption(id);
 
@@ -159,7 +162,8 @@ try {
     return all.find(project=>project.scenes[0].layers.length===4);
   });
   await writeFile(resolve(dir,'animation-ui-project.json'),JSON.stringify(saved,null,2));
-  await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);await page.locator('[data-tab="animate"]').click();await seek(2);
+  await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);await page.locator('[data-tab="animate"]').click();
+  await page.evaluate(()=>{const d=document.getElementById('applied-camera');if(d)d.open=true;});await seek(2);
   const reloaded=await config();
   assert.deepEqual(reloaded.cameraMoves,saved.scenes[0].cameraMoves,'camera movements survive IndexedDB reload');
   assert.deepEqual(reloaded.layerEffects,saved.scenes[0].layerEffects,'layer effects survive IndexedDB reload');

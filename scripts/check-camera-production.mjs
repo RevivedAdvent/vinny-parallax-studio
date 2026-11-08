@@ -72,6 +72,7 @@ async function checkStudioUI(browser, base) {
   assert.equal(scene.fps, 60); assert.equal(scene.totalFrames, 1800); assert.equal(scene.tracks.length, 0, 'example ships no legacy tracks');
   assert.equal(await page.locator('#scene-duration').inputValue(), '30');
   await page.locator('[data-tab="animate"]').click();
+  await page.evaluate(()=>{const d=document.getElementById('applied-camera');if(d)d.open=true;});
   assert.match(await page.locator('#animation-effects-list').innerText(), /No camera movements yet/);
   assert.equal(await page.locator('text=Legacy tracks are shown').count(), 0, 'legacy explainer is gone');
   await page.close();

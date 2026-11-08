@@ -131,6 +131,7 @@ try {
   await ui.locator('#asset-files').setInputFiles([resolve('test-images/01-background.png'), resolve('test-images/04-layer 3.png')]);
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layers.length === 2);
   await ui.locator('[data-tab="parallax"]').click();
+  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   assert.equal(await ui.locator('#parallax-catalogue [data-parallax]').count(), 6, 'six feature cards');
   assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), false, 'first six techniques start collapsed');
   await ui.locator('#parallax-layer-effects summary').click();
@@ -202,6 +203,7 @@ try {
   assert.equal(geometry.inspectorHidden, false, 'inspector stays visible');
   await ui.locator('[data-tab="effects"]').click();
   await ui.locator('[data-tab="parallax"]').click();
+  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   await ui.locator('#scrub').fill('1.5');
   await ui.waitForFunction(() => Math.abs(window.cameraStudio.getState().frame / window.cameraStudio.getState().config.fps - 1.5) < .02);
   let effects = (await uiState()).state.layerMasks;
@@ -210,6 +212,7 @@ try {
   await ui.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved locally');
   await ui.reload(); await ui.waitForFunction(() => window.cameraStudio?.ready);
   await ui.locator('[data-tab="parallax"]').click();
+  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   const saved = await uiState();
   assert.equal(saved.config.layerEffects.length, 3, 'effects persist after reload');
   assert.equal(saved.config.parallax.strength, 1.5, 'depth settings persist');
@@ -217,6 +220,7 @@ try {
   assert.equal(saved.config.layerEffects.find(e => e.kind === 'drift').amplitude, 18);
   assert.ok(saved.config.layers.every(l => l.scale === 1 && l.opacity === 1 && l.x === 0 && l.y === 0), 'Arrange transforms are preserved');
   await ui.locator('[data-tab="parallax"]').click();
+  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
   await ui.locator('[data-effect-delete]').first().click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects.length === 2);
   assert.deepEqual(errors, []);
