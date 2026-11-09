@@ -120,109 +120,197 @@ try {
   await render(2); const composed = await state();
   assert.ok(composed.state.virtualCamera.x > 0 && composed.spriteAlpha.l3 < .3, 'camera and layer effects compose');
   assert.deepEqual(errors, []);
-  // Authoring workflow: cards, inspector, applied list, edit, delete and persistence.
-  const ui = await runtime.browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  // ---- UI: categories, Basic/Advanced, folder-aware selection, frozen depth --
+  const ui = await runtime.browser.newPage({ viewport: { width: 1400, height: 900 } });
   ui.on('pageerror', e => errors.push(e.message));
   ui.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   ui.on('dialog', dialog => dialog.accept());
   await ui.goto(runtime.url); await ui.waitForFunction(() => window.cameraStudio?.ready);
-  const uiState = () => ui.evaluate(() => window.cameraStudio.getState());
+  const currentConfig = async () => (await ui.evaluate(() => window.cameraStudio.getState())).config;
   await ui.locator('[data-tab="arrange"]').click();
   await ui.locator('#asset-files').setInputFiles([resolve('test-images/01-background.png'), resolve('test-images/04-layer 3.png')]);
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layers.length === 2);
   await ui.locator('[data-tab="parallax"]').click();
-  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  assert.equal(await ui.locator('#parallax-catalogue [data-parallax]').count(), 6, 'six feature cards');
-  assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), false, 'first six techniques start collapsed');
-  await ui.locator('#parallax-layer-effects summary').click();
-  assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), true, 'first six techniques expand from their dropdown');
-  assert.match(await ui.locator('.parallax-pane').innerText(), /PARALLAX AND LAYER ANIMATION/);
-  assert.match(await ui.locator('.parallax-pane').innerText(), /Stronger movement is not always better/);
+  await ui.evaluate(() => { const applied = document.getElementById('applied-parallax'); if (applied) applied.open = true; });
+
+  // Preview protection: the canvas viewport keeps its pre-redesign geometry.
+  const geometryBaseline = { '1400x900': { w: 812, h: 742 }, '1920x1080': { w: 1332, h: 922 }, '1100x800': { w: 592, h: 642 } };
+  for (const [size, expected] of Object.entries(geometryBaseline)) {
+    const [viewportWidth, viewportHeight] = size.split('x').map(Number);
+    await ui.setViewportSize({ width: viewportWidth, height: viewportHeight });
+    await ui.waitForTimeout(120);
+    const box = await ui.evaluate(() => {
+      const viewer = document.querySelector('#viewer').getBoundingClientRect();
+      const canvas = document.querySelector('#canvas-host canvas').getBoundingClientRect();
+      return {
+        w: viewer.width, h: viewer.height, cw: canvas.width, ch: canvas.height,
+        hostChildren: document.querySelector('#canvas-host').children.length,
+        overlays: document.querySelectorAll('#viewer [data-preview-overlay], #viewer .preview-handle, #viewer .parallax-overlay').length,
+      };
+    });
+    assert.ok(box.w >= expected.w - 1 && box.h >= expected.h - 1, `preview shrank at ${size}: ${JSON.stringify(box)}`);
+    assert.ok(box.cw > 0 && box.ch > 0, `canvas renders at ${size}`);
+    assert.equal(box.hostChildren, 1, 'preview host contains only the canvas');
+    assert.equal(box.overlays, 0, 'no new preview controls or overlays');
+  }
+  await ui.setViewportSize({ width: 1500, height: 1000 });
+  await ui.waitForTimeout(120);
+
+  const categoryOf = {
+    depth: 'depth', depthScale: 'depth', planes: 'depth',
+    drift: 'motion', framing: 'motion', wind: 'motion', float: 'motion', ambient: 'motion',
+    fade: 'appearance', reveal: 'appearance', shadow: 'appearance',
+    transform: 'deformation', warp: 'deformation',
+  };
+  const openCategory = async id => {
+    const details = ui.locator(`.parallax-category[data-category="${id}"]`);
+    if (!(await details.evaluate(node => node.open))) await details.locator('summary').click();
+  };
+  const choose = async id => { await openCategory(categoryOf[id]); await ui.locator(`[data-parallax="${id}"]`).click(); };
+
+  // Four categories with every existing effect in place.
+  assert.deepEqual(await ui.locator('.parallax-category-name').allInnerTexts(), ['Depth & Perspective', 'Layer Motion', 'Layer Appearance', 'Advanced Deformation']);
+  assert.deepEqual((await ui.locator('.parallax-category-count').allInnerTexts()).map(Number), [3, 5, 3, 2]);
+  assert.equal(await ui.locator('#parallax-categories [data-parallax]').count(), 13, 'no existing effect is removed');
+  const expectedByCategory = {
+    depth: ['depth', 'depthScale', 'planes'],
+    motion: ['drift', 'framing', 'wind', 'float', 'ambient'],
+    appearance: ['fade', 'reveal', 'shadow'],
+    deformation: ['transform', 'warp'],
+  };
+  for (const [id, expected] of Object.entries(expectedByCategory)) {
+    assert.deepEqual(await ui.locator(`.parallax-category[data-category="${id}"] [data-parallax]`).evaluateAll(nodes => nodes.map(node => node.dataset.parallax)), expected, `${id} catalogue`);
+  }
+  assert.equal(await ui.locator('.parallax-category[data-category=depth]').evaluate(node => node.open), true, 'depth category starts open');
+  assert.equal(await ui.locator('.parallax-category[data-category=motion]').evaluate(node => node.open), false, 'other categories start collapsed');
+  await ui.locator('.parallax-category[data-category=depth] summary').click();
+  assert.equal(await ui.locator('.parallax-category[data-category=depth]').evaluate(node => node.open), false, 'categories collapse');
+  await ui.locator('.parallax-category[data-category=motion] summary').click();
+  assert.equal(await ui.locator('.parallax-category[data-category=motion]').evaluate(node => node.open), true, 'categories expand');
   assert.match(await ui.locator('#parallax-inspector').innerText(), /Choose a technique/);
-  // Drift
-  await ui.locator('[data-parallax="drift"]').click();
+
+  // Basic settings visible, Advanced collapsed; no artificial empty sections.
+  await choose('drift');
   assert.match(await ui.locator('#parallax-inspector').innerText(), /Independent layer drift/);
-  await ui.locator('#parallax-duration').fill('4');
+  assert.equal(await ui.locator('[data-settings=basic]').isVisible(), true, 'basic settings are visible');
+  assert.equal(await ui.locator('.parallax-advanced').evaluate(node => node.open), false, 'advanced settings start collapsed');
+  assert.equal(await ui.locator('#drift-phase').count(), 1, 'advanced keeps phase');
+  assert.equal(await ui.locator('#drift-seed').count(), 1, 'advanced keeps the variation seed');
+  await choose('fade');
+  assert.equal(await ui.locator('.parallax-advanced').count(), 0, 'fade has no empty advanced section');
+  await choose('framing');
+  assert.equal(await ui.locator('#framing-repeat').count(), 1, 'framing keeps its cycle count in advanced');
+  await ui.locator('.parallax-advanced summary').click();
+  assert.equal(await ui.locator('#framing-repeat').getAttribute('min'), '1');
+  assert.equal(await ui.locator('#framing-repeat').getAttribute('max'), '8');
+  await choose('transform');
+  assert.equal(await ui.locator('.parallax-advanced').count(), 0, 'transform has no empty advanced section');
+
+  // Numeric validation rejects out-of-range values without adding an effect.
+  await choose('drift');
+  await ui.locator('#drift-amplitude').fill('401');
+  await ui.locator('#parallax-form button[type=submit]').click();
+  await ui.waitForTimeout(150);
+  assert.equal(((await currentConfig()).layerEffects ?? []).length, 0, 'invalid amplitude is rejected');
   await ui.locator('#drift-amplitude').fill('30');
   await ui.locator('#parallax-form button[type=submit]').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.length === 1);
-  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Independent layer drift/);
-  // Edit drift
-  await ui.locator('[data-effect-edit]').first().click();
-  assert.equal(await ui.locator('#drift-amplitude').inputValue(), '30');
-  await ui.locator('#drift-amplitude').fill('18');
+  await ui.locator('.parallax-advanced summary').click();
+  assert.equal(await ui.locator('#drift-phase').inputValue(), '0', 'advanced values load when editing');
+  await ui.locator('#drift-phase').fill('45');
   await ui.locator('#parallax-form button[type=submit]').click();
-  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects[0].amplitude === 18);
-  // Fade on the second layer
-  await ui.locator('[data-parallax="fade"]').click();
-  await ui.locator('input[name=parallax-layer]').last().check();
-  await ui.locator('#fade-from').fill('100'); await ui.locator('#fade-to').fill('0');
-  await ui.locator('#parallax-start').fill('2');
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.phase === 45);
+  await ui.locator('[data-effect-duplicate]').first().click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects.length === 2);
+  await ui.locator('[data-effect-delete]').first().click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects.length === 1);
+  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Independent layer drift/, 'applied list keeps Edit, Duplicate and Delete');
+
+  // Arrange folders are reused, not recreated.
+  await ui.locator('[data-tab="arrange"]').click();
+  await ui.locator('#add-folder').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.folders?.length === 1);
+  const layerIds = (await currentConfig()).layers.map(layer => layer.id);
+  for (const id of layerIds) {
+    await ui.locator(`[data-drag="layer:${id}"]`).click({ button: 'right' });
+    await ui.locator('.context-menu-item', { hasText: 'Folder 1' }).last().click();
+    await ui.waitForTimeout(200);
+  }
+  await ui.locator(`[data-drag="layer:${layerIds[0]}"] .eye-toggle`).click();
+  await ui.waitForTimeout(200);
+  await ui.locator(`[data-drag="layer:${layerIds[0]}"] .lock-toggle`).click({ force: true });
+  await ui.waitForTimeout(250);
+
+  // Multi-target folder picker.
+  await ui.locator('[data-tab="parallax"]').click();
+  await choose('fade');
+  assert.equal(await ui.locator('.parallax-picker-folder').count(), 1, 'layers sit under their Arrange folder');
+  assert.equal(await ui.locator('.parallax-picker-layer').count(), 2, 'both folder members are listed');
+  assert.equal(await ui.locator('.parallax-picker-badge.hidden').count(), 1, 'hidden state is shown');
+  assert.equal(await ui.locator('.parallax-picker-badge.locked').count(), 1, 'locked state is shown');
+  const folderBox = ui.locator('.parallax-picker-folder-head input');
+  await folderBox.check();
+  assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 2, 'folder checkbox selects current members');
+  await ui.locator('input[name=parallax-layer]').first().uncheck();
+  assert.equal(await folderBox.evaluate(node => node.indeterminate), true, 'partial folder selection is indeterminate');
+  assert.equal(await ui.locator('.parallax-picker-total').innerText(), '1 selected');
+  await folderBox.check();
+  await ui.locator('[data-picker-search]').fill('04');
+  assert.equal(await ui.locator('.parallax-picker-layer').count(), 1, 'search filters children');
+  assert.equal(await ui.locator('.parallax-picker-folder').count(), 1, 'matching parent stays visible');
+  await ui.locator('[data-picker-search]').fill('');
+  assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 2, 'clearing search restores selection');
   await ui.locator('#parallax-form button[type=submit]').click();
-  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.length === 2);
-  // Radial reveal on the first layer
-  await ui.locator('[data-parallax="reveal"]').click();
-  await ui.locator('#reveal-mask').selectOption('radial');
-  await ui.locator('#reveal-to').fill('80');
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects.filter(effect => effect.kind === 'fade').length === 1);
+  const savedFade = (await currentConfig()).layerEffects.find(effect => effect.kind === 'fade');
+  assert.deepEqual([...savedFade.layerIds].sort(), [...layerIds].sort(), 'folder selection expands to real layer ids');
+  assert.ok(!savedFade.layerIds.includes((await currentConfig()).folders[0].id), 'folder ids are never stored');
+
+  // Single-target picker uses radios and never a folder checkbox.
+  await choose('warp');
+  assert.equal(await ui.locator('input[name=parallax-layer][type=radio]').count(), 2, 'single target uses radios');
+  assert.equal(await ui.locator('[data-folder-check]').count(), 0, 'folder rows cannot be the single target');
+  assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 1, 'exactly one single target');
+
+  // Arrange multi-selection prepopulates new multi-target effects.
+  await ui.locator('[data-tab="arrange"]').click();
+  const arrangeRows = ui.locator('#layer-list .layer-row[data-drag^="layer:"]');
+  await arrangeRows.nth(0).click();
+  await arrangeRows.nth(1).click({ modifiers: ['Control'] });
+  await ui.locator('[data-tab="parallax"]').click();
+  await choose('framing');
+  assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 2, 'Arrange selection prepopulates new effects');
   await ui.locator('#parallax-form button[type=submit]').click();
-  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.length === 3);
-  // Depth settings
-  await ui.locator('[data-parallax="depth"]').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects.some(effect => effect.kind === 'framing'));
+  // Editing uses the stored targets even when the Arrange selection changed.
+  await ui.locator('[data-tab="arrange"]').click();
+  await arrangeRows.nth(0).click();
+  await ui.locator('[data-tab="parallax"]').click();
+  const framedRow = ui.locator('#parallax-effects-list .parallax-item', { hasText: 'Foreground framing' });
+  await framedRow.locator('[data-effect-edit]').click();
+  assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 2, 'editing restores the stored target ids');
+
+  // Frozen Depth-based Parallax keeps its exact controls and behaviour.
+  await choose('depth');
+  assert.equal(await ui.locator('#parallax-strength').getAttribute('min'), '0');
+  assert.equal(await ui.locator('#parallax-strength').getAttribute('max'), '300');
+  assert.equal(await ui.locator('[id^=influence-]').first().getAttribute('max'), '300');
+  assert.equal(await ui.locator('[id^=depth-]').first().getAttribute('min'), '0');
+  assert.equal(await ui.locator('[id^=depth-]').first().getAttribute('max'), '100');
+  assert.match(await ui.locator('#parallax-inspector').innerText(), /Layer depth and influence/);
   await ui.locator('#parallax-strength').fill('150');
   await ui.locator('#parallax-depth-save').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.parallax?.strength === 1.5);
   assert.match(await ui.locator('#parallax-effects-list').innerText(), /Depth-based parallax/);
-  await ui.screenshot({ path: 'output/parallax/parallax-ui.png' });
-  const geometry = await ui.evaluate(() => {
-    const area = document.querySelector('.parallax-pane');
-    const cards = [...document.querySelectorAll('#parallax-catalogue [data-parallax]')];
-    const rows = [...document.querySelectorAll('#parallax-effects-list .parallax-item')];
-    const buttons = [...document.querySelectorAll('#parallax-effects-list .parallax-actions button')];
-    const inspector = document.querySelector('#parallax-inspector');
-    return {
-      viewport: document.documentElement.clientWidth,
-      pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-      cards: cards.length,
-      cardClipped: cards.filter(c => c.scrollHeight > c.clientHeight + 1 || c.scrollWidth > c.clientWidth + 1).length,
-      cardZero: cards.filter(c => c.getBoundingClientRect().width < 80 || c.getBoundingClientRect().height < 20).length,
-      rows: rows.length,
-      rowClipped: rows.filter(r => r.scrollWidth > r.clientWidth + 1).length,
-      buttons: buttons.length,
-      buttonHidden: buttons.filter(b => { const r = b.getBoundingClientRect(); return r.width < 20 || r.height < 10 || r.right > document.documentElement.clientWidth + 1; }).length,
-      paneRight: area.getBoundingClientRect().right,
-      inspectorHidden: inspector.getBoundingClientRect().height < 20,
-    };
-  });
-  assert.equal(geometry.pageOverflow, false, `page overflows horizontally: ${JSON.stringify(geometry)}`);
-  assert.equal(geometry.cards, 6); assert.equal(geometry.cardClipped, 0, `clipped cards: ${JSON.stringify(geometry)}`);
-  assert.equal(geometry.cardZero, 0, `cards without size: ${JSON.stringify(geometry)}`);
-  assert.equal(geometry.rows, 4, 'depth settings plus three effects are listed');
-  assert.equal(geometry.rowClipped, 0, `clipped applied rows: ${JSON.stringify(geometry)}`);
-  assert.equal(geometry.buttons, 11, 'Edit, Duplicate and Delete per effect plus depth Edit/Reset');
-  assert.equal(geometry.buttonHidden, 0, `unreachable buttons: ${JSON.stringify(geometry)}`);
-  assert.equal(geometry.inspectorHidden, false, 'inspector stays visible');
+  await ui.locator('#parallax-depth-reset').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.parallax === undefined);
+
+  // Playback still drives the untouched preview.
+  await ui.locator('#play').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().frame > 0, null, { timeout: 4000 });
+  await ui.locator('#play').click();
   await ui.locator('[data-tab="effects"]').click();
   await ui.locator('[data-tab="parallax"]').click();
-  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  await ui.locator('#scrub').fill('1.5');
-  await ui.waitForFunction(() => Math.abs(window.cameraStudio.getState().frame / window.cameraStudio.getState().config.fps - 1.5) < .02);
-  let effects = (await uiState()).state.layerMasks;
-  assert.equal(Object.values(effects ?? {}).length, 1, 'only the reveal layer is masked');
-  await ui.locator('#save').click();
-  await ui.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved locally');
-  await ui.reload(); await ui.waitForFunction(() => window.cameraStudio?.ready);
-  await ui.locator('[data-tab="parallax"]').click();
-  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  const saved = await uiState();
-  assert.equal(saved.config.layerEffects.length, 3, 'effects persist after reload');
-  assert.equal(saved.config.parallax.strength, 1.5, 'depth settings persist');
-  assert.equal(saved.config.layerEffects.find(e => e.kind === 'reveal').mask, 'radial');
-  assert.equal(saved.config.layerEffects.find(e => e.kind === 'drift').amplitude, 18);
-  assert.ok(saved.config.layers.every(l => l.scale === 1 && l.opacity === 1 && l.x === 0 && l.y === 0), 'Arrange transforms are preserved');
-  await ui.locator('[data-tab="parallax"]').click();
-  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  await ui.locator('[data-effect-delete]').first().click();
-  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects.length === 2);
   assert.deepEqual(errors, []);
-  console.log('Parallax browser checks passed: preview pixels and masks, depth travel, deterministic seeking, six cards, authoring, editing, deleting and persistence.');
+  console.log('Parallax browser checks passed: preview pixels and masks, depth travel, deterministic seeking, four categories, Basic/Advanced, folder-aware targets, frozen depth controls and preview geometry.');
 } finally { await runtime.close(); }

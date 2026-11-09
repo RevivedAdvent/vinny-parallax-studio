@@ -167,3 +167,63 @@ test('validation drops missing layers and malformed effects without breaking loa
   const brokenSettings = scene(); brokenSettings.parallax = { strength: NaN, influence: { l0: 1 } };
   assert.equal(compileCamera(brokenSettings).config().parallax, undefined);
 });
+
+// ---- Folder-aware target selection helpers ---------------------------------
+
+import { arrangeOrderedIds, arrangeTargets, createPickerState, folderCheckState, folderGroups, pickerRows, visibleLayerIds } from '../src/studio/parallax-layers.ts';
+
+const folderScene = () => {
+  const s = scene();
+  s.folders = [
+    { id: 'foliage', name: 'Foliage', order: 1000 },
+    { id: 'sky', name: 'Sky', order: 2000 },
+  ];
+  s.layers[0].folderId = 'foliage'; s.layers[0].order = 999;
+  s.layers[1].folderId = 'foliage'; s.layers[1].order = 998;
+  s.layers[2].folderId = 'sky'; s.layers[2].order = 1999;
+  return s;
+};
+
+test('folder-aware rows follow Arrange order and keep parents visible while searching', () => {
+  const s = folderScene();
+  const all = pickerRows(s, createPickerState());
+  const flatten = rows => rows.flatMap(row => row.kind === 'folder' ? [row.folder.name, ...row.layers.map(layer => layer.name)] : [row.layer.name]);
+  assert.deepEqual(flatten(all), ['Sky', 'Layer 2', 'Foliage', 'Layer 0', 'Layer 1'], 'rows follow the Arrange stack');
+  const folder = all[0];
+  assert.equal(folder.kind, 'folder');
+  assert.equal(folder.kind === 'folder' && folder.expanded, true, 'folders start expanded');
+  assert.deepEqual(visibleLayerIds(all), ['l2', 'l0', 'l1'], 'displayed layers are Arrange-ordered');
+
+  const collapsed = createPickerState();
+  collapsed.collapsed.add('sky');
+  const hidden = pickerRows(s, collapsed);
+  assert.equal(hidden[0].kind === 'folder' && hidden[0].expanded, false, 'collapse hides children');
+  assert.deepEqual(visibleLayerIds(hidden), ['l0', 'l1'], 'collapsed folder children are not visible rows');
+
+  const childSearch = createPickerState(); childSearch.search = 'layer 1';
+  const childRows = pickerRows(s, childSearch);
+  assert.equal(childRows.length, 1, 'only the matching parent remains');
+  assert.equal(childRows[0].kind === 'folder' && childRows[0].folder.name, 'Foliage');
+  assert.deepEqual(childRows[0].kind === 'folder' && childRows[0].layers.map(layer => layer.id), ['l1'], 'only the matching child is shown');
+
+  const folderSearch = createPickerState(); folderSearch.search = 'foliage';
+  const folderRows = pickerRows(s, folderSearch);
+  assert.deepEqual(folderRows[0].kind === 'folder' && folderRows[0].layers.map(layer => layer.id), ['l0', 'l1'], 'folder-name matches keep every current child accessible');
+});
+
+test('folder checkbox states and ordered selections never store folder ids', () => {
+  assert.equal(folderCheckState([], ['l0', 'l1']), 'unchecked');
+  assert.equal(folderCheckState(['l0'], ['l0', 'l1']), 'indeterminate');
+  assert.equal(folderCheckState(['l0', 'l1'], ['l0', 'l1']), 'checked');
+  assert.equal(folderCheckState(['l0'], []), 'unchecked', 'empty folders are unchecked');
+
+  const s = folderScene();
+  assert.deepEqual(arrangeOrderedIds(s, ['l1', 'l0', 'l1', 'missing']), ['l0', 'l1'], 'deduped and Arrange-ordered');
+  assert.deepEqual(arrangeTargets(s, ['l0', 'l2'], 'multi'), ['l2', 'l0'], 'multi targets expand to layer ids in stack order');
+  assert.deepEqual(arrangeTargets(s, ['l1', 'l2'], 'single'), ['l1'], 'single targets follow the primary selection');
+  assert.deepEqual(arrangeTargets(s, [], 'single'), ['l2'], 'fallback keeps the foreground default');
+  assert.deepEqual(arrangeTargets(s, [], 'multi'), [], 'no Arrange selection means an empty multi picker');
+  const grouped = folderGroups(s);
+  assert.deepEqual(grouped.map(group => group.folder?.name ?? null), ['Sky', 'Foliage'], 'per-layer lists group under parent folders');
+  assert.deepEqual(grouped.map(group => group.layers.map(layer => layer.id)), [['l2'], ['l0', 'l1']]);
+});

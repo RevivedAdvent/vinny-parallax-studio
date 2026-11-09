@@ -121,78 +121,213 @@ try {
   assert.equal((await state()).warps.l3, null, 'rejected warp leaves no renderer state');
   assert.equal(await png(), neutral, 'rejected warp leaves the frame untouched');
 
-  // UI: the second catalogue is collapsible, authors wind, edits and deletes it.
+  // ---- UI: conditional forms and folder-aware depth authoring ----------------
   const ui = await runtime.browser.newPage({ viewport: { width: 1500, height: 1000 } });
   ui.on('pageerror', e => errors.push(e.message));
   ui.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   ui.on('dialog', dialog => dialog.accept());
   await ui.goto(runtime.url); await ui.waitForFunction(() => window.cameraStudio?.ready);
+  const currentConfig = async () => (await ui.evaluate(() => window.cameraStudio.getState())).config;
   await ui.locator('[data-tab="arrange"]').click();
   await ui.locator('#asset-files').setInputFiles([resolve('test-images/01-background.png'), resolve('test-images/04-layer 3.png')]);
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layers.length === 2);
   await ui.locator('[data-tab="parallax"]').click();
-  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), false, 'the original six techniques are a collapsed dropdown');
-  await ui.locator('#parallax-layer-effects summary').click();
-  assert.equal(await ui.locator('#parallax-layer-effects').evaluate(node => node.open), true, 'the original six techniques expand');
-  assert.equal(await ui.locator('#parallax-catalogue [data-parallax]').count(), 6, 'existing six cards are unchanged');
-  assert.equal(await ui.locator('#parallax-environmental-targets [data-parallax]').count(), 7, 'seven environmental cards');
-  assert.equal(await ui.locator('#parallax-environmental').evaluate(node => node.open), false, 'environmental catalogue starts collapsed');
-  await ui.locator('#parallax-environmental summary').click();
-  assert.equal(await ui.locator('#parallax-environmental').evaluate(node => node.open), true, 'environmental catalogue expands');
-  const environmentalGeometry = await ui.evaluate(() => {
-    const cards = [...document.querySelectorAll('#parallax-environmental-targets [data-parallax]')];
-    return {
-      clipped: cards.filter(card => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1).length,
-      tiny: cards.filter(card => { const box = card.getBoundingClientRect(); return box.width < 80 || box.height < 20; }).length,
-      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-    };
-  });
-  assert.deepEqual(environmentalGeometry, { clipped: 0, tiny: 0, overflow: false }, 'environmental cards fit without clipping or page overflow');
-  await ui.locator('#parallax-environmental-targets [data-parallax="wind"]').click();
+  await ui.evaluate(() => { const applied = document.getElementById('applied-parallax'); if (applied) applied.open = true; });
+  const categoryOf = { drift: 'motion', framing: 'motion', wind: 'motion', float: 'motion', ambient: 'motion', fade: 'appearance', reveal: 'appearance', shadow: 'appearance', transform: 'deformation', warp: 'deformation', depthScale: 'depth', planes: 'depth' };
+  const openCategory = async id => {
+    const details = ui.locator(`.parallax-category[data-category="${id}"]`);
+    if (!(await details.evaluate(node => node.open))) await details.locator('summary').click();
+  };
+  const choose = async id => { await openCategory(categoryOf[id]); await ui.locator(`[data-parallax="${id}"]`).click(); };
+  const openAdvanced = async () => {
+    const details = ui.locator('.parallax-advanced');
+    if (!(await details.isVisible())) return false;
+    if (!(await details.evaluate(node => node.open))) await details.locator('summary').click();
+    return true;
+  };
+  const visible = async id => ui.locator(`#${id}`).isVisible();
+
+  // Sway / Wind: Basic and Advanced keep every existing parameter.
+  await choose('wind');
   assert.match(await ui.locator('#parallax-inspector').innerText(), /Sway \/ Wind/);
-  await ui.locator('input[name=parallax-layer]').first().check();
+  assert.equal(await ui.locator('input[name=wind-direction]').first().isVisible(), true, 'wind direction is visible');
+  assert.equal(await visible('wind-rotation'), true);
+  assert.equal(await visible('wind-speed'), true);
+  assert.equal(await visible('wind-gust'), true);
+  assert.equal(await ui.locator('.parallax-advanced').evaluate(node => node.open), false, 'advanced starts collapsed');
+  await ui.locator('[data-picker-all]').click();
   await ui.locator('#wind-rotation').fill('9');
   await ui.locator('#wind-speed').fill('0.5');
   await ui.locator('#parallax-form button[type=submit]').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.kind === 'wind');
   assert.match(await ui.locator('#parallax-effects-list').innerText(), /Sway \/ Wind/);
   await ui.locator('[data-effect-edit]').first().click();
-  assert.equal(await ui.locator('#wind-rotation').inputValue(), '9');
+  assert.equal(await openAdvanced(), true);
+  assert.equal(await ui.locator('#wind-rotation').inputValue(), '9', 'basic values reload');
+  assert.equal(await ui.locator('#wind-pivot-y').inputValue(), '100', 'advanced pivot values reload');
   await ui.locator('#wind-rotation').fill('3');
   await ui.locator('#parallax-form button[type=submit]').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.rotation === 3);
   await ui.locator('[data-effect-delete]').first().click();
   await ui.waitForFunction(() => (window.cameraStudio.getState().config.layerEffects?.length ?? 0) === 0);
-  assert.equal(await ui.locator('#parallax-effects-list .parallax-item').count(), 0, 'deleting removes the applied row');
-  // Depth scale and plane assignments are authored in the same catalogue and survive save/reload.
-  await ui.locator('[data-parallax="depthScale"]').click();
+
+  // Ambient: Layer Loop shows only layer controls, Particle Loop only particles.
+  await choose('ambient');
+  assert.match(await ui.locator('#parallax-inspector').innerText(), /Ambient Looping/);
+  assert.equal(await visible('ambient-motion'), true, 'layer loop shows its motion selector');
+  assert.equal(await visible('ambient-loop'), true);
+  assert.equal(await visible('ambient-count'), false, 'particle controls stay hidden in layer mode');
+  assert.equal(await openAdvanced(), true);
+  assert.equal(await visible('ambient-phase'), true, 'oscillation has a phase');
+  assert.equal(await visible('ambient-tileable'), false, 'tileable only applies to drift');
+  await ui.locator('#ambient-motion').selectOption('drift');
+  assert.equal(await visible('ambient-speed'), true, 'continuous drift exposes speed');
+  assert.equal(await visible('ambient-loop'), false, 'continuous drift hides the loop period');
+  assert.equal(await visible('ambient-amplitude'), false, 'continuous drift hides pulse amplitude');
+  assert.equal(await visible('ambient-phase'), false, 'phase is irrelevant to drift');
+  assert.equal(await visible('ambient-tileable'), true);
+  await ui.locator('#ambient-motion').selectOption('pulse');
+  assert.equal(await visible('ambient-amplitude'), true);
+  assert.equal(await visible('ambient-loop'), true);
+  assert.equal(await visible('ambient-speed'), false, 'drift speed is hidden for opacity pulse');
+  assert.equal(await ui.locator('input[name=ambient-direction]').first().isVisible(), false, 'direction has no effect on opacity pulse');
+  await ui.locator('input[name=ambient-mode][value=particles]').check();
+  assert.equal(await visible('ambient-count'), true, 'particle mode exposes particle controls');
+  assert.equal(await visible('ambient-motion'), false, 'layer loop controls disappear in particle mode');
+  assert.equal(await visible('ambient-amplitude'), false);
+  await ui.locator('#ambient-count').fill('44');
+  await ui.locator('#ambient-size-min').fill('12');
+  await ui.locator('#ambient-size-max').fill('30');
+  assert.equal(await visible('ambient-lifetime'), true, 'particle advanced settings stay available');
+  await ui.locator('input[name=ambient-mode][value=layer]').check();
+  assert.equal(await ui.locator('#ambient-count').inputValue(), '44', 'hidden particle values survive a mode switch');
+  await ui.locator('input[name=ambient-mode][value=particles]').check();
+  assert.equal(await ui.locator('#ambient-size-min').inputValue(), '12', 'unsaved values survive repeated mode switches');
+  await ui.locator('input[name=ambient-mode][value=layer]').check();
+  await ui.locator('#ambient-motion').selectOption('drift');
+  await ui.locator('#ambient-tileable').check();
+  await ui.locator('input[name=ambient-mode][value=particles]').check();
+  await ui.locator('#ambient-count').fill('44');
+  await ui.locator('#parallax-form button[type=submit]').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.kind === 'ambient');
+  let ambient = (await currentConfig()).layerEffects[0];
+  assert.equal(ambient.mode, 'particles', 'particle mode saves');
+  assert.equal(ambient.count, 44);
+  assert.equal(ambient.sizeMin, 12);
+  assert.equal(ambient.tileable, true, 'irrelevant stored layer settings are preserved');
+  await ui.locator('[data-effect-edit]').first().click();
+  await ui.locator('input[name=ambient-mode][value=layer]').check();
+  await ui.locator('#ambient-motion').selectOption('drift');
+  await ui.locator('#parallax-form button[type=submit]').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.mode === 'layer');
+  ambient = (await currentConfig()).layerEffects[0];
+  assert.equal(ambient.motion, 'drift');
+  assert.equal(ambient.count, 44, 'particle count is preserved when switching back to layer mode');
+  assert.equal(ambient.sizeMax, 30);
+  await ui.locator('[data-effect-delete]').first().click();
+  await ui.waitForFunction(() => (window.cameraStudio.getState().config.layerEffects?.length ?? 0) === 0);
+
+  // Reveal: wipe and radial expose only their relevant controls.
+  await choose('reveal');
+  assert.equal(await visible('reveal-direction') || await ui.locator('input[name=reveal-direction]').first().isVisible(), true, 'wipe shows direction');
+  assert.equal(await ui.locator('.parallax-advanced').evaluate(node => node.hidden), true, 'wipe has no radial origin section');
+  await ui.locator('input[name=reveal-mask][value=radial]').check();
+  assert.equal(await ui.locator('input[name=reveal-direction]').first().isVisible(), false, 'radial hides wipe direction');
+  assert.equal(await ui.locator('.parallax-advanced').evaluate(node => node.hidden), false, 'radial exposes origin controls');
+  await openAdvanced();
+  assert.equal(await visible('reveal-origin-x'), true);
+  assert.equal(await visible('reveal-origin-y'), true);
+  await ui.locator('#reveal-origin-x').fill('25');
+  await ui.locator('input[name=reveal-mask][value=wipe]').check();
+  await ui.locator('#parallax-form button[type=submit]').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.kind === 'reveal');
+  let reveal = (await currentConfig()).layerEffects[0];
+  assert.equal(reveal.mask, 'wipe');
+  assert.ok(Math.abs(reveal.originX - .25) < 1e-9, 'radial origin is preserved while hidden');
+  await ui.locator('[data-effect-edit]').first().click();
+  await ui.locator('input[name=reveal-mask][value=radial]').check();
+  await ui.locator('#parallax-form button[type=submit]').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.layerEffects?.[0]?.mask === 'radial');
+  reveal = (await currentConfig()).layerEffects[0];
+  assert.ok(Math.abs(reveal.originX - .25) < 1e-9, 'stored radial origin survives re-editing');
+  await ui.locator('[data-effect-delete]').first().click();
+  await ui.waitForFunction(() => (window.cameraStudio.getState().config.layerEffects?.length ?? 0) === 0);
+
+  // Folder-aware Depth-based Scale influence hierarchy.
+  await choose('depthScale');
+  assert.equal(await visible('depth-scale-near'), true);
+  assert.equal(await visible('depth-scale-reference'), false, 'reference depth is an advanced setting');
+  await openAdvanced();
+  assert.equal(await ui.locator('[id^=scale-influence]').count(), 2, 'every layer has its own influence');
   await ui.locator('#depth-scale-near').fill('135');
   await ui.locator('#depth-scale-far').fill('80');
+  await ui.locator('[id^=scale-influence]').first().fill('50');
   await ui.locator('#depth-scale-save').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.depthScale?.near === 1.35);
-  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Depth-based Scale/);
-  await ui.locator('[data-parallax="planes"]').click();
+  const depthScale = (await currentConfig()).depthScale;
+  assert.equal(depthScale.far, .8);
+  assert.equal(Object.values(depthScale.influence).filter(value => value !== 1).length, 1, 'each influence value is independently editable');
+  // Group the existing layers under a folder and confirm the hierarchy follows.
+  await ui.locator('[data-tab="arrange"]').click();
+  await ui.locator('#add-folder').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.folders?.length === 1);
+  const layerIds = (await currentConfig()).layers.map(layer => layer.id);
+  for (const id of layerIds) {
+    await ui.locator(`[data-drag="layer:${id}"]`).click({ button: 'right' });
+    await ui.locator('.context-menu-item', { hasText: 'Folder 1' }).last().click();
+    await ui.waitForTimeout(200);
+  }
+  await ui.locator('[data-tab="parallax"]').click();
+  await ui.locator('[data-parallax="depthScale"]').click();
+  await openAdvanced();
+  assert.equal(await ui.locator('.parallax-layer-group-head').count(), 1, 'influence rows are grouped under their folder');
+  assert.equal(await ui.locator('[id^=scale-influence]').count(), 2, 'every member keeps an independent influence field');
+
+  // Multi-plane Camera: folder bulk assignment expands into explicit layer ids.
+  const originalDepths = (await currentConfig()).layers.map(layer => layer.depth);
+  await choose('planes');
   await ui.locator('#plane-add').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.depthPlanes?.length === 1);
-  await ui.locator('[id^=plane-name]').fill('Midground');
-  await ui.locator('[id^=plane-depth]').fill('65');
-  await ui.locator('[id^=layer-plane]').first().selectOption({ index: 1 });
+  await ui.locator('#plane-add').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthPlanes?.length === 2);
+  assert.equal(await ui.locator('#plane-depth-exact-0').isVisible(), false, 'exact depths are advanced settings');
+  await ui.locator('#plane-name-0').fill('Midground');
+  await ui.locator('#plane-depth-0').fill('65');
+  await ui.locator('#plane-name-1').fill('Foreground');
+  assert.equal(await ui.locator('[data-folder-plane]').count(), 1, 'folders get a bulk assignment control');
+  await ui.locator('[data-folder-plane]').selectOption({ index: 1 });
+  assert.deepEqual(await ui.locator('[id^=layer-plane]').evaluateAll(nodes => nodes.map(node => node.value)), [await ui.locator('[data-folder-plane] option').nth(1).getAttribute('value'), await ui.locator('[data-folder-plane] option').nth(1).getAttribute('value')], 'folder assignment fills every member');
+  await ui.locator('[id^=layer-plane]').first().selectOption({ index: 2 });
   await ui.locator('#plane-save').click();
-  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthPlanes?.[0]?.layerIds.length === 1);
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthPlanes?.length === 2);
+  const planes = (await currentConfig()).depthPlanes;
+  assert.equal(planes[0].name, 'Midground');
+  assert.equal(planes[0].depth, .65);
+  assert.ok(planes[0].layerIds.length >= 1 && planes[1].layerIds.length >= 1, 'individual overrides remain possible');
+  assert.equal(new Set([...planes[0].layerIds, ...planes[1].layerIds]).size, planes[0].layerIds.length + planes[1].layerIds.length, 'each layer belongs to at most one plane');
+  const knownLayerIds = new Set((await currentConfig()).layers.map(layer => layer.id));
+  assert.ok(planes.every(plane => plane.layerIds.every(id => knownLayerIds.has(id))), 'plane assignments store layer ids');
+  assert.deepEqual((await currentConfig()).layers.map(layer => layer.depth), originalDepths, 'stored depth is untouched');
+  await openAdvanced();
+  assert.equal(await ui.locator('#plane-depth-exact-0').inputValue(), '0.65', 'exact depth mirrors the percentage');
+  await ui.locator('#plane-depth-exact-0').fill('0.4');
+  assert.equal(await ui.locator('#plane-depth-0').inputValue(), '40', 'exact and percentage depth stay in step');
+  await ui.locator('#plane-save').click();
+  await ui.waitForTimeout(250);
+  assert.equal((await currentConfig()).depthPlanes[0].depth, .4);
+
+  // Persistence across a reload.
   await ui.locator('#save').click();
   await ui.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved locally');
   await ui.reload(); await ui.waitForFunction(() => window.cameraStudio?.ready);
   await ui.locator('[data-tab="parallax"]').click();
-  await ui.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  const persisted = (await ui.evaluate(() => window.cameraStudio.getState())).config;
-  assert.equal(persisted.depthScale.near, 1.35, 'depth scale persists with the scene');
-  assert.equal(persisted.depthPlanes[0].name, 'Midground', 'plane names persist');
-  assert.equal(persisted.depthPlanes[0].depth, .65, 'plane depths persist');
-  assert.equal(persisted.depthPlanes[0].layerIds.length, 1, 'plane assignments persist');
-  assert.deepEqual(persisted.layers.map(layer => layer.id), persisted.layers.map(layer => layer.id), 'saved layer order is stable');
-  await mkdir('output/parallax', { recursive: true });
-  await ui.screenshot({ path: 'output/parallax/parallax-environmental-ui.png' });
+  await ui.evaluate(() => { const applied = document.getElementById('applied-parallax'); if (applied) applied.open = true; });
+  const persisted = await currentConfig();
+  assert.equal(persisted.depthScale.near, 1.35, 'depth scale persists');
+  assert.equal(persisted.depthPlanes[0].name, 'Midground');
+  assert.equal(persisted.depthPlanes[0].depth, .4);
+  assert.equal(persisted.depthPlanes.reduce((sum, plane) => sum + plane.layerIds.length, 0), 2, 'plane assignments persist');
+  assert.deepEqual(persisted.layers.map(layer => layer.depth), originalDepths, 'stored depths are unchanged after reload');
   assert.deepEqual(errors, []);
-  console.log('Parallax environmental browser checks passed: wind, float, ambient wrap, particles, shadows, depth scale, planes, warp, UI authoring.');
+  console.log('Parallax environmental browser checks passed: wind, float, ambient wrap, particles, shadows, depth scale, planes, warp, conditional Ambient/Reveal forms and folder-aware depth authoring.');
 } finally { await runtime.close(); }

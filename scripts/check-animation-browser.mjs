@@ -82,21 +82,24 @@ try {
   // Parallax layer effects: drift (x/y), transform (scale/rotation) and fade (opacity).
   await page.locator('[data-tab="parallax"]').click();
   await page.evaluate(()=>{const d=document.getElementById('applied-parallax');if(d)d.open=true;});
-  await page.locator('#parallax-layer-effects summary').click();
-  const setLayer=async(id)=>page.locator('#parallax-layer').selectOption(id);
+  const chooseParallax=async(id,category)=>{
+    const details=page.locator(`.parallax-category[data-category="${category}"]`);
+    if(!(await details.evaluate(node=>node.open))) await details.locator('summary').click();
+    await page.locator(`[data-parallax="${id}"]`).click();
+  };
 
-  await page.locator('#parallax-catalogue [data-parallax="drift"]').click();
-  await setLayer(layers[1].id);
+  await chooseParallax('drift','motion');
+  await page.locator(`input[name=parallax-layer][value="${layers[1].id}"]`).check();
   await page.locator('#parallax-start').fill('0');await page.locator('#parallax-duration').fill('3');await page.locator('#drift-amplitude').fill('40');
   await page.locator('#parallax-form button[type=submit]').click();await waitEffects(1);
 
-  await page.locator('#parallax-catalogue [data-parallax="transform"]').click();
-  await setLayer(layers[2].id);
+  await chooseParallax('transform','deformation');
+  await page.locator(`input[name=parallax-layer][value="${layers[2].id}"]`).check();
   await page.locator('#parallax-start').fill('0');await page.locator('#parallax-duration').fill('3');
   await page.locator('#transform-scale-from').fill('100');await page.locator('#transform-scale-to').fill('135');
   await page.locator('#parallax-form button[type=submit]').click();await waitEffects(2);
 
-  await page.locator('#parallax-catalogue [data-parallax="fade"]').click();
+  await chooseParallax('fade','appearance');
   await page.locator(`input[name=parallax-layer][value="${layers[3].id}"]`).check();
   await page.locator('#parallax-start').fill('0');await page.locator('#parallax-duration').fill('3');
   await page.locator('#fade-from').fill('0');await page.locator('#fade-to').fill('15');

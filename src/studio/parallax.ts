@@ -1,35 +1,74 @@
 import type { CameraSceneConfig } from '../camera/types.ts';
 import { sceneDuration } from '../camera/animation.ts';
-import type { FrameDirection, LayerEffect, LayerEffectKind, MaskKind } from '../camera/layer-effects.ts';
+import type {
+  AmbientDirection, AmbientMode, AmbientMotion, DriftAxis, DriftMotion, FrameDirection,
+  LayerEffect, LayerEffectKind, MaskKind, WindDirection,
+} from '../camera/layer-effects.ts';
+import {
+  arrangeTargets, createPickerState, defaultTargetId, escapeHtml as escape, folderGroups,
+  mountTargetPicker, type PickerState, type TargetMode,
+} from './parallax-layers.ts';
 
 type Feature = 'depth' | 'depthScale' | 'planes' | LayerEffectKind;
-const features: { id: Feature; name: string; description: string }[] = [
-  { id: 'depth', name: 'Depth-based parallax', description: 'Nearer layers shift more than distant layers as the camera translates. Essential for the 2.5D look.' },
-  { id: 'drift', name: 'Independent layer drift', description: 'Add small movement to a layer even when the camera is nearly still.' },
-  { id: 'transform', name: 'Layer scale and rotation', description: 'Small transforms can suggest perspective or emphasize a compositional element.' },
-  { id: 'framing', name: 'Foreground framing', description: 'Let leaves, branches or ferns partially enter and leave the frame.' },
-  { id: 'fade', name: 'Layer fade', description: 'Fade individual elements without fading the complete image.' },
-  { id: 'reveal', name: 'Animated mask reveal', description: 'Reveal artwork through a moving shape, gradient or mask.' },
+
+interface CatalogueItem { id: Feature; name: string; description: string }
+interface Category { id: string; name: string; items: CatalogueItem[] }
+
+/**
+ * Four authoring categories replace the previous two broad sections. The
+ * effects themselves are unchanged; only discovery and presentation change.
+ */
+const categories: Category[] = [
+  {
+    id: 'depth', name: 'Depth & Perspective',
+    items: [
+      { id: 'depth', name: 'Depth-based parallax', description: 'Nearer layers shift more than distant layers as the camera translates. Essential for the 2.5D look.' },
+      { id: 'depthScale', name: 'Depth-based Scale', description: 'Resize layers from their depth so foreground art reads slightly larger.' },
+      { id: 'planes', name: 'Multi-plane Camera', description: 'Add intermediate depth planes for finer separation than near, subject and far.' },
+    ],
+  },
+  {
+    id: 'motion', name: 'Layer Motion',
+    items: [
+      { id: 'drift', name: 'Independent layer drift', description: 'Add small movement to a layer even when the camera is nearly still.' },
+      { id: 'framing', name: 'Foreground framing', description: 'Let leaves, branches or ferns partially enter and leave the frame.' },
+      { id: 'wind', name: 'Sway / Wind', description: 'Pivot-based rotation with small gusts, for foliage, branches and hair.' },
+      { id: 'float', name: 'Floating / Bobbing', description: 'Gentle looping vertical, lateral or combined movement for hovering elements.' },
+      { id: 'ambient', name: 'Ambient Looping', description: 'Loop environmental artwork, or scatter a transparent artwork as lightweight particles.' },
+    ],
+  },
+  {
+    id: 'appearance', name: 'Layer Appearance',
+    items: [
+      { id: 'fade', name: 'Layer fade', description: 'Fade individual elements without fading the complete image.' },
+      { id: 'reveal', name: 'Animated mask reveal', description: 'Reveal artwork through a moving shape, gradient or mask.' },
+      { id: 'shadow', name: 'Shadow Movement', description: 'An attached, softened silhouette with subtle periodic light movement.' },
+    ],
+  },
+  {
+    id: 'deformation', name: 'Advanced Deformation',
+    items: [
+      { id: 'transform', name: 'Layer scale and rotation', description: 'Small transforms can suggest perspective or emphasize a compositional element.' },
+      { id: 'warp', name: 'Perspective Warp', description: 'Deform one flat layer with four animated corners to suggest a new viewpoint.' },
+    ],
+  },
 ];
-const environmental: { id: Feature; name: string; description: string }[] = [
-  { id: 'wind', name: 'Sway / Wind', description: 'Pivot-based rotation with small gusts, for foliage, branches and hair.' },
-  { id: 'float', name: 'Floating / Bobbing', description: 'Gentle looping vertical, lateral or combined movement for hovering elements.' },
-  { id: 'ambient', name: 'Ambient Looping', description: 'Loop environmental artwork, or scatter a transparent artwork as lightweight particles.' },
-  { id: 'shadow', name: 'Shadow Movement', description: 'An attached, softened silhouette with subtle periodic light movement.' },
-  { id: 'depthScale', name: 'Depth-based Scale', description: 'Resize layers from their depth so foreground art reads slightly larger.' },
-  { id: 'planes', name: 'Multi-plane Camera', description: 'Add intermediate depth planes for finer separation than near, subject and far.' },
-  { id: 'warp', name: 'Perspective Warp', description: 'Deform one flat layer with four animated corners to suggest a new viewpoint.' },
-];
-const names = Object.fromEntries([...features, ...environmental].map(f => [f.id, f.name])) as Record<Feature, string>;
-const directions: FrameDirection[] = ['left', 'right', 'top', 'bottom'];
-const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
+const allItems = categories.flatMap(category => category.items);
+const names = Object.fromEntries(allItems.map(item => [item.id, item.name])) as Record<Feature, string>;
+const categoriesOpen = new Map<string, boolean>([['depth', true]]);
+
 const pct = (value: number) => Math.round(value * 1000) / 10;
+const round = (value: number, places = 3) => Math.round(value * 10 ** places) / 10 ** places;
 
 export function createParallaxWorkspace(options: {
   getScene: () => CameraSceneConfig; getSceneKey: () => string; getTime: () => number; seek: (seconds: number) => void;
   commit: (scene: CameraSceneConfig) => Promise<void>; notify: (message: string) => void;
+  /** The Arrange workspace's current selection; Parallax never stores its own copy. */
+  getArrangeSelection?: () => string[];
 }) {
-  let preset: Feature | '' = '', editing = '', sceneKey = '';
+  let preset: Feature | '' = '', editing = '', sceneKey = '', formKey = '';
+  let pickerState: PickerState = createPickerState();
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
   async function save(next: CameraSceneConfig) {
@@ -45,25 +84,46 @@ export function createParallaxWorkspace(options: {
       && Object.values(settings.influence ?? {}).every(value => value === 1));
   };
 
-  function catalogue(items: { id: Feature; name: string; description: string }[]) {
-    return `<div class="parallax-catalogue">${items.map(f =>
-      `<button data-parallax="${f.id}" class="camera-card ${preset === f.id ? 'selected' : ''}"><b>${f.name}</b><span>${f.description}</span></button>`).join('')}</div>`;
+  // ---- catalogue -------------------------------------------------------------
+
+  function catalogue() {
+    return `<div id="parallax-categories" class="parallax-categories">${categories.map(category => {
+      const open = categoriesOpen.get(category.id) ?? false;
+      return `<details class="parallax-category" data-category="${category.id}" ${open ? 'open' : ''}>
+        <summary class="parallax-category-head">
+          <span class="parallax-category-name">${category.name}</span>
+          <span class="parallax-category-count">${category.items.length}</span>
+        </summary>
+        <div class="parallax-catalogue">${category.items.map(item =>
+          `<button type="button" data-parallax="${item.id}" class="camera-card ${preset === item.id ? 'selected' : ''}" aria-pressed="${preset === item.id}"><b>${item.name}</b><span>${item.description}</span></button>`).join('')}</div>
+      </details>`;
+    }).join('')}</div>`;
+  }
+
+  function wireCatalogue() {
+    const host = $('parallax-categories');
+    host.querySelectorAll<HTMLButtonElement>('[data-parallax]').forEach(button => {
+      button.onclick = () => { preset = button.dataset.parallax as Feature; editing = ''; render(); };
+    });
+    host.querySelectorAll<HTMLDetailsElement>('.parallax-category').forEach(details => {
+      details.addEventListener('toggle', () => categoriesOpen.set(details.dataset.category ?? '', details.open));
+    });
   }
 
   function render() {
     const cfg = options.getScene();
     if (sceneKey !== options.getSceneKey()) { sceneKey = options.getSceneKey(); preset = ''; editing = ''; }
     if (editing && !(cfg.layerEffects ?? []).some(effect => effect.id === editing)) editing = '';
-    $('parallax-catalogue').innerHTML = catalogue(features);
-    const environmentalHost = $('parallax-environmental-targets');
-    if (environmentalHost) environmentalHost.innerHTML = catalogue(environmental);
-    document.querySelectorAll<HTMLButtonElement>('#parallax-catalogue [data-parallax], #parallax-environmental-targets [data-parallax]').forEach(button => {
-      button.onclick = () => { preset = button.dataset.parallax as Feature; editing = ''; render(); };
-    });
+    const catalogueHost = $('parallax-categories');
+    if (catalogueHost) { catalogueHost.outerHTML = catalogue(); wireCatalogue(); }
+    const nextFormKey = `${preset}/${editing}`;
+    if (nextFormKey !== formKey) { formKey = nextFormKey; pickerState = createPickerState(); }
     renderApplied(cfg);
     renderInspector(cfg);
     updateTime();
   }
+
+  // ---- applied effects -------------------------------------------------------
 
   function renderApplied(cfg: CameraSceneConfig) {
     const rows: string[] = [];
@@ -119,100 +179,91 @@ export function createParallaxWorkspace(options: {
     }
   }
 
-  function input(id: string, label: string, value: number, min: number, max: number, step: number | 'any' = 'any') {
-    return `<label class="field">${label}<input id="${id}" type="number" required min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
+  // ---- reusable inspector controls ------------------------------------------
+
+  const numberField = (id: string, label: string, value: number, min: number, max: number, step: number | 'any' = 'any', hint = '') =>
+    `<label class="field"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><input id="${id}" type="number" required min="${min}" max="${max}" step="${step}" value="${round(value)}"></label>`;
+
+  const segmented = (name: string, label: string, choices: { value: string; label: string; title?: string }[], current: string) =>
+    `<div class="parallax-segment-field"><span class="parallax-segment-label">${label}</span><div class="segmented" role="radiogroup" aria-label="${label}">${choices.map(choice =>
+      `<label class="seg" title="${choice.title ?? choice.label}"><input type="radio" name="${name}" value="${choice.value}" ${choice.value === current ? 'checked' : ''}><span>${choice.label}</span></label>`).join('')}</div></div>`;
+
+  const toggleField = (id: string, label: string, checked: boolean, hint = '') =>
+    `<label class="field parallax-toggle"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><input id="${id}" type="checkbox" ${checked ? 'checked' : ''}></label>`;
+
+  const basicSection = (body: string) => `<section class="parallax-settings" data-settings="basic"><h4 class="parallax-settings-title">Basic settings</h4>${body}</section>`;
+  const advancedSection = (body: string, conditionalOnly = false) =>
+    `<details class="parallax-advanced"${conditionalOnly ? ' data-conditional-only="true"' : ''}><summary>Advanced settings</summary><div class="parallax-advanced-body">${body}</div></details>`;
+
+  const checkedValue = (name: string) =>
+    (document.querySelector<HTMLInputElement>(`#parallax-inspector input[name="${name}"]:checked`)?.value ?? '');
+
+  const directionChoices = (values: { value: string; label: string }[]) => values;
+  const fourWay = (prefix: string, labels: Record<string, string> = {}) =>
+    directionChoices((['left', 'right', 'top', 'bottom'] as const).map(value => ({ value, label: labels[value] ?? `${value[0]!.toUpperCase()}${value.slice(1)}` })));
+  const threeWayAxis = [
+    { value: 'x', label: 'Horizontal' }, { value: 'y', label: 'Vertical' }, { value: 'xy', label: 'Both' },
+  ];
+
+  /** Group a per-layer list under its parent Arrange folder. */
+  function groupedLayers(cfg: CameraSceneConfig, row: (id: string, name: string, layerDepth: number) => string, folderAction?: (folderId: string) => string) {
+    if (!cfg.layers.length) return '<p class="parallax-empty">Import artwork first.</p>';
+    return folderGroups(cfg).map(group => {
+      if (!group.folder) {
+        const layer = group.layers[0]!;
+        return `<div class="parallax-layer-group loose">${row(layer.id, layer.name, layer.depth)}</div>`;
+      }
+      return `<div class="parallax-layer-group"><div class="parallax-layer-group-head"><span class="folder-glyph" aria-hidden="true">▸</span>${escape(group.folder.name)}<span class="parallax-layer-group-count">${group.layers.length}</span>${folderAction ? `<span class="parallax-layer-group-action">${folderAction(group.folder.id)}</span>` : ''}</div>${group.layers.map(layer => row(layer.id, layer.name, layer.depth)).join('')}</div>`;
+    }).join('');
   }
-  const layerPicker = (cfg: CameraSceneConfig, current: string[] | undefined, multiple: boolean, selectedId: string) => multiple
-    ? `<fieldset class="parallax-layers"><legend>Target layers</legend>${cfg.layers.map(layer =>
-      `<label class="field"><span>${escape(layer.name)}</span><input type="checkbox" name="parallax-layer" value="${escape(layer.id)}" ${(current ?? []).includes(layer.id) ? 'checked' : ''}></label>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>`
-    : `<label class="field">Target layer<select id="parallax-layer">${cfg.layers.map(layer =>
-      `<option value="${escape(layer.id)}" ${layer.id === (current?.[0] ?? selectedId) ? 'selected' : ''}>${escape(layer.name)} · depth ${layer.depth.toFixed(2)}</option>`).join('')}</select></label>`;
+
+  function syncConditionals(scope: HTMLElement) {
+    const mode = checkedValue('ambient-mode');
+    const motion = (document.getElementById('ambient-motion') as HTMLSelectElement | null)?.value ?? '';
+    const mask = checkedValue('reveal-mask');
+    const matches = (list: string | undefined, value: string) => !list || list.split(',').includes(value);
+    const visible = (element: HTMLElement) => {
+      const { showMode, showMotion, showMask } = element.dataset;
+      return matches(showMode, mode) && matches(showMotion, motion) && matches(showMask, mask);
+    };
+    for (const element of scope.querySelectorAll<HTMLElement>('[data-show-mode], [data-show-motion], [data-show-mask]')) {
+      element.hidden = !visible(element);
+    }
+    for (const details of scope.querySelectorAll<HTMLDetailsElement>('.parallax-advanced')) {
+      if (details.dataset.conditionalOnly !== 'true') continue;
+      const conditional = [...details.querySelectorAll<HTMLElement>('[data-show-mode], [data-show-motion], [data-show-mask]')];
+      details.hidden = !conditional.some(element => !element.hidden);
+    }
+  }
+
+  function mountPicker(cfg: CameraSceneConfig, effect: LayerEffect | undefined, mode: TargetMode) {
+    const host = document.getElementById('parallax-targets');
+    if (!host) return;
+    const stored = effect?.layerIds ?? [];
+    const initial = effect
+      ? (mode === 'single' ? stored.slice(0, 1) : stored)
+      : arrangeTargets(cfg, options.getArrangeSelection?.() ?? [], mode);
+    activePicker = mountTargetPicker(host, {
+      cfg, mode, selected: initial, state: pickerState,
+      fallbackId: defaultTargetId(cfg),
+    });
+  }
+
+  // ---- inspector -------------------------------------------------------------
+
+  let activePicker: { selected: () => string[] } | null = null;
 
   function renderInspector(cfg: CameraSceneConfig) {
     const inspector = $('parallax-inspector');
+    activePicker = null;
     if (!preset) {
       inspector.innerHTML = '<h3>Parallax and layer animation</h3><p class="animation-note">Choose a technique to add depth or animate individual layers. Camera movements are unchanged.</p>';
       return;
     }
     const effect = (cfg.layerEffects ?? []).find(e => e.id === editing);
     const duration = sceneDuration(cfg);
-    const start = effect?.start ?? 0;
-    const length = effect?.duration ?? Math.min(3, duration);
-    const end = Math.max(0, duration - start);
-    const timing = input('parallax-start', 'Start · seconds', start, 0, Math.max(0, duration - .01)) + input('parallax-duration', 'Duration · seconds', length, .01, Math.max(.01, end));
-    const action = `<div class="row-actions"><button class="outline" type="submit">${effect ? 'Update effect' : 'Add effect'}</button>${effect ? '<button type="button" id="parallax-add-another">＋ Add another</button><button type="button" id="parallax-cancel">Cancel edit</button>' : ''}</div><p class="animation-note">The same effect can be added more than once; each copy keeps its own timing.</p>`;
-    if (preset === 'depthScale') {
-      const settings = cfg.depthScale;
-      const influence = settings?.influence ?? {};
-      inspector.innerHTML = `<h3>Depth-based Scale</h3><p class="animation-note">Scale is applied to the layer plane before camera projection. 100% is neutral; the reference depth stays exactly 1.</p>
-        ${input('depth-scale-near', 'Near (depth 1) · %', pct(settings?.near ?? 1), 25, 300)}
-        ${input('depth-scale-far', 'Far (depth 0) · %', pct(settings?.far ?? 1), 25, 300)}
-        ${input('depth-scale-reference', 'Reference depth · %', pct(settings?.reference ?? .5), 5, 95)}
-        ${input('depth-scale-strength', 'Strength · %', pct(settings?.strength ?? 1), 0, 200)}
-        <fieldset class="parallax-layers"><legend>Per-layer influence · %</legend>${cfg.layers.map(layer =>
-          `<label class="field"><span>${escape(layer.name)} <small>depth ${pct(layer.depth)}%</small></span><input id="scale-influence-${layer.id}" type="number" min="0" max="200" step="1" value="${pct(influence[layer.id] ?? 1)}"></label>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
-        <div class="row-actions"><button class="outline" type="button" id="depth-scale-save">Apply scale settings</button><button type="button" id="depth-scale-reset">Reset to neutral</button></div>`;
-      $<HTMLButtonElement>('depth-scale-save').onclick = () => {
-        const value = (id: string) => (document.getElementById(id) as HTMLInputElement).valueAsNumber;
-        const near = value('depth-scale-near') / 100, far = value('depth-scale-far') / 100;
-        const reference = value('depth-scale-reference') / 100, strength = value('depth-scale-strength') / 100;
-        if (![near, far, reference, strength].every(Number.isFinite) || near < .25 || far < .25 || strength < 0 || reference < .05 || reference > .95) { options.notify('Check the scale values'); return; }
-        const influenceNext: Record<string, number> = {};
-        for (const layer of cfg.layers) {
-          const field = document.getElementById(`scale-influence-${layer.id}`) as HTMLInputElement | null;
-          const amount = (field?.valueAsNumber ?? 100) / 100;
-          if (!Number.isFinite(amount) || amount < 0 || amount > 2) { options.notify('Influence must be between 0 and 200%'); return; }
-          if (amount !== 1) influenceNext[layer.id] = amount;
-        }
-        const next = structuredClone(cfg);
-        next.depthScale = { near, far, reference, strength, influence: influenceNext };
-        void save(next);
-      };
-      $<HTMLButtonElement>('depth-scale-reset').onclick = () => { const next = structuredClone(cfg); next.depthScale = undefined; void save(next); };
-      return;
-    }
-    if (preset === 'planes') {
-      const planes = cfg.depthPlanes ?? [];
-      const assignment = (layerId: string) => planes.find(plane => plane.layerIds.includes(layerId))?.id ?? '';
-      inspector.innerHTML = `<h3>Multi-plane Camera</h3><p class="animation-note">Planes replace a layer's stored depth for the camera only; artwork order never changes. Unassigned layers keep their own depth.</p>
-        ${planes.map((plane, index) => `<fieldset class="parallax-layers"><legend>${escape(plane.name)}</legend>
-          <label class="field">Name<input id="plane-name-${index}" type="text" maxlength="60" value="${escape(plane.name)}"></label>
-          <label class="field">Depth · %<input id="plane-depth-${index}" type="number" min="0" max="100" step="1" value="${pct(plane.depth)}"></label>
-          <button type="button" data-plane-delete="${plane.id}">Delete plane</button></fieldset>`).join('') || '<p class="parallax-empty">No depth planes yet. Add one, then assign layers.</p>'}
-        <fieldset class="parallax-layers"><legend>Layer assignments</legend>${cfg.layers.map(layer =>
-          `<label class="field"><span>${escape(layer.name)} <small>stored ${pct(layer.depth)}%</small></span><select id="layer-plane-${layer.id}"><option value="">— stored depth —</option>${planes.map(plane =>
-            `<option value="${plane.id}" ${assignment(layer.id) === plane.id ? 'selected' : ''}>${escape(plane.name)}</option>`).join('')}</select></label>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
-        <div class="row-actions"><button type="button" id="plane-add">＋ Add plane</button><button class="outline" type="button" id="plane-save">Apply planes</button></div>`;
-      $<HTMLButtonElement>('plane-add').onclick = () => {
-        const next = structuredClone(cfg);
-        next.depthPlanes = [...(next.depthPlanes ?? []), { id: crypto.randomUUID(), name: `Plane ${planes.length + 1}`, depth: .5, layerIds: [] }];
-        void save(next);
-      };
-      inspector.querySelectorAll<HTMLButtonElement>('[data-plane-delete]').forEach(button => button.onclick = () => {
-        if (!confirm('Delete this plane? Its layers return to their stored depth.')) return;
-        const next = structuredClone(cfg);
-        next.depthPlanes = (next.depthPlanes ?? []).filter(plane => plane.id !== button.dataset.planeDelete);
-        void save(next);
-      });
-      $<HTMLButtonElement>('plane-save').onclick = () => {
-        const next = structuredClone(cfg);
-        const planeList = (next.depthPlanes ?? []).map((plane, index) => {
-          const name = (document.getElementById(`plane-name-${index}`) as HTMLInputElement).value.trim() || plane.name;
-          const depth = (document.getElementById(`plane-depth-${index}`) as HTMLInputElement).valueAsNumber / 100;
-          if (!Number.isFinite(depth) || depth < 0 || depth > 1) { options.notify('Plane depth must be 0–100%'); return null; }
-          return { ...plane, name: name.slice(0, 60), depth, layerIds: [] as string[] };
-        });
-        if (planeList.some(plane => plane === null)) return;
-        for (const layer of cfg.layers) {
-          const select = document.getElementById(`layer-plane-${layer.id}`) as HTMLSelectElement | null;
-          const plane = planeList.find(candidate => candidate!.id === select?.value);
-          if (plane) plane.layerIds.push(layer.id);
-        }
-        next.depthPlanes = planeList as NonNullable<typeof next.depthPlanes>;
-        void save(next);
-      };
-      return;
-    }
+
+    // Depth-based parallax is frozen: its inspector and behaviour are unchanged.
     if (preset === 'depth') {
       const influence = cfg.parallax?.influence ?? {};
       inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Parallax scales each layer's camera translation inside the projection, never a screen offset. 100% is neutral; 0% pins a layer to the camera. Depth 0 is background, 1 is foreground.</p>
@@ -246,139 +297,282 @@ export function createParallaxWorkspace(options: {
       $<HTMLButtonElement>('parallax-depth-reset').onclick = () => { const next = structuredClone(cfg); next.parallax = undefined; void save(next); };
       return;
     }
-    // Default to the nearest layer; parallax and enters read best on foreground artwork.
-    const selectedId = cfg.layers.reduce((best, layer) => layer.depth > (best?.depth ?? -1) ? layer : best, cfg.layers[0])?.id ?? '';
-    let fields = timing;
+
+    if (preset === 'depthScale') {
+      const settings = cfg.depthScale;
+      const influence = settings?.influence ?? {};
+      inspector.innerHTML = `<h3>Depth-based Scale</h3><p class="animation-note">Scale is applied to the layer plane before camera projection. Foreground layers use the near value and background layers use the far value.</p>
+        ${basicSection(
+          numberField('depth-scale-near', 'Near scale · foreground %', pct(settings?.near ?? 1), 25, 300, 1)
+          + numberField('depth-scale-far', 'Far scale · background %', pct(settings?.far ?? 1), 25, 300, 1)
+          + numberField('depth-scale-strength', 'Overall strength · %', pct(settings?.strength ?? 1), 0, 200, 1)
+          + `<div class="row-actions"><button class="outline" type="button" id="depth-scale-save">Apply scale settings</button><button type="button" id="depth-scale-reset">Reset to neutral</button></div>`
+        )}
+        ${advancedSection(
+          numberField('depth-scale-reference', 'Reference depth · %', pct(settings?.reference ?? .5), 5, 95, 1, 'layers at this depth stay exactly 100%')
+          + `<div class="parallax-settings-subtitle">Per-layer influence · %</div><div class="parallax-layer-groups">${groupedLayers(cfg, (id, name, depth) =>
+            `<label class="parallax-layer-row"><span class="parallax-layer-row-name">${escape(name)}<small>depth ${pct(depth)}%</small></span><input id="scale-influence-${id}" type="number" min="0" max="200" step="1" value="${pct(influence[id] ?? 1)}" aria-label="Influence for ${escape(name)}"></label>`)}</div>`
+        )}`;
+      $<HTMLButtonElement>('depth-scale-save').onclick = () => {
+        const value = (id: string) => (document.getElementById(id) as HTMLInputElement).valueAsNumber;
+        const near = value('depth-scale-near') / 100, far = value('depth-scale-far') / 100;
+        const reference = value('depth-scale-reference') / 100, strength = value('depth-scale-strength') / 100;
+        if (![near, far, reference, strength].every(Number.isFinite) || near < .25 || far < .25 || strength < 0 || reference < .05 || reference > .95) { options.notify('Check the scale values'); return; }
+        const influenceNext: Record<string, number> = {};
+        for (const layer of cfg.layers) {
+          const field = document.getElementById(`scale-influence-${layer.id}`) as HTMLInputElement | null;
+          const amount = (field?.valueAsNumber ?? 100) / 100;
+          if (!Number.isFinite(amount) || amount < 0 || amount > 2) { options.notify('Influence must be between 0 and 200%'); return; }
+          if (amount !== 1) influenceNext[layer.id] = amount;
+        }
+        const next = structuredClone(cfg);
+        next.depthScale = { near, far, reference, strength, influence: influenceNext };
+        void save(next);
+      };
+      $<HTMLButtonElement>('depth-scale-reset').onclick = () => { const next = structuredClone(cfg); next.depthScale = undefined; void save(next); };
+      return;
+    }
+
+    if (preset === 'planes') {
+      const planes = cfg.depthPlanes ?? [];
+      const assignment = (layerId: string) => planes.find(plane => plane.layerIds.includes(layerId))?.id ?? '';
+      const planeOptions = (selected = '') => `${planes.map(plane => `<option value="${escape(plane.id)}" ${selected === plane.id ? 'selected' : ''}>${escape(plane.name)}</option>`).join('')}`;
+      inspector.innerHTML = `<h3>Multi-plane Camera</h3>
+        ${basicSection(
+          `<div class="parallax-plane-list">${planes.map((plane, index) => `<div class="parallax-plane" data-plane="${escape(plane.id)}">
+            <div class="parallax-plane-head"><input id="plane-name-${index}" class="parallax-plane-name" type="text" maxlength="60" value="${escape(plane.name)}" aria-label="Plane name"><button type="button" class="parallax-plane-delete" data-plane-delete="${escape(plane.id)}" title="Delete plane" aria-label="Delete plane">✕</button></div>
+            <label class="field"><span>Depth · %</span><input id="plane-depth-${index}" type="number" min="0" max="100" step="1" value="${pct(plane.depth)}"></label>
+          </div>`).join('') || '<p class="parallax-empty">No depth planes yet. Add one, then assign layers.</p>'}</div>
+          <div class="row-actions"><button type="button" id="plane-add">＋ Add plane</button></div>
+          <div class="parallax-settings-subtitle">Layer assignments</div>
+          <div class="parallax-assignments">${groupedLayers(cfg, (id, name, depth) => `<label class="parallax-layer-row"><span class="parallax-layer-row-name">${escape(name)}<small>stored ${pct(depth)}%</small></span><select id="layer-plane-${id}" aria-label="Plane for ${escape(name)}"><option value="">— stored depth —</option>${planeOptions(assignment(id))}</select></label>`, folderId => `<select class="parallax-folder-assign" data-folder-plane="${escape(folderId)}" aria-label="Assign every layer in this folder"><option value="">Assign folder…</option>${planeOptions()}</select>`)}</div>
+          <div class="row-actions"><button class="outline" type="button" id="plane-save">Apply planes</button></div>`
+        )}
+        ${advancedSection(
+          planes.map((plane, index) => `<label class="field"><span>${escape(plane.name)} · exact depth</span><input id="plane-depth-exact-${index}" type="number" min="0" max="1" step="0.001" value="${round(plane.depth)}"></label>`).join('')
+          + '<p class="animation-note">A plane overrides the stored depth for camera evaluation only. Draw order never changes, and unassigned layers keep their own depth. Deleting a plane returns its layers to their stored depth.</p>'
+        )}`;
+      // Keep the percentage and exact depth fields in step without hiding either one.
+      planes.forEach((_, index) => {
+        const coarse = document.getElementById(`plane-depth-${index}`) as HTMLInputElement | null;
+        const exact = document.getElementById(`plane-depth-exact-${index}`) as HTMLInputElement | null;
+        if (!coarse || !exact) return;
+        coarse.oninput = () => { const value = coarse.valueAsNumber / 100; if (Number.isFinite(value)) exact.value = String(Math.round(value * 1000) / 1000); };
+        exact.oninput = () => { const value = exact.valueAsNumber * 100; if (Number.isFinite(value)) coarse.value = String(Math.round(value)); };
+      });
+      for (const select of inspector.querySelectorAll<HTMLSelectElement>('[data-folder-plane]')) {
+        select.onchange = () => {
+          const folderId = select.dataset.folderPlane!;
+          for (const layer of cfg.layers.filter(candidate => candidate.folderId === folderId)) {
+            const field = document.getElementById(`layer-plane-${layer.id}`) as HTMLSelectElement | null;
+            if (field) field.value = select.value;
+          }
+          select.value = '';
+        };
+      }
+      $<HTMLButtonElement>('plane-add').onclick = () => {
+        const next = structuredClone(cfg);
+        next.depthPlanes = [...(next.depthPlanes ?? []), { id: crypto.randomUUID(), name: `Plane ${planes.length + 1}`, depth: .5, layerIds: [] }];
+        void save(next);
+      };
+      inspector.querySelectorAll<HTMLButtonElement>('[data-plane-delete]').forEach(button => button.onclick = () => {
+        if (!confirm('Delete this plane? Its layers return to their stored depth.')) return;
+        const next = structuredClone(cfg);
+        next.depthPlanes = (next.depthPlanes ?? []).filter(plane => plane.id !== button.dataset.planeDelete);
+        void save(next);
+      });
+      $<HTMLButtonElement>('plane-save').onclick = () => {
+        const next = structuredClone(cfg);
+        const planeList: { id: string; name: string; depth: number; layerIds: string[] }[] = [];
+        for (const [index, plane] of (next.depthPlanes ?? []).entries()) {
+          const name = (document.getElementById(`plane-name-${index}`) as HTMLInputElement).value.trim() || plane.name;
+          const exact = document.getElementById(`plane-depth-exact-${index}`) as HTMLInputElement | null;
+          const coarse = document.getElementById(`plane-depth-${index}`) as HTMLInputElement | null;
+          const depth = exact ? exact.valueAsNumber : (coarse?.valueAsNumber ?? pct(plane.depth)) / 100;
+          if (!Number.isFinite(depth) || depth < 0 || depth > 1) { options.notify('Plane depth must be 0–100%'); return; }
+          planeList.push({ ...plane, name: name.slice(0, 60), depth, layerIds: [] });
+        }
+        for (const layer of cfg.layers) {
+          const select = document.getElementById(`layer-plane-${layer.id}`) as HTMLSelectElement | null;
+          const plane = planeList.find(candidate => candidate.id === select?.value);
+          if (plane) plane.layerIds.push(layer.id);
+        }
+        next.depthPlanes = planeList;
+        void save(next);
+      };
+      return;
+    }
+
+    // ---- time-based layer effects -------------------------------------------
+
+    const start = effect?.start ?? 0;
+    const length = effect?.duration ?? Math.min(3, duration);
+    const end = Math.max(0, duration - start);
+    const timing = numberField('parallax-start', 'Start · seconds', start, 0, Math.max(0, duration - .01))
+      + numberField('parallax-duration', 'Duration · seconds', length, .01, Math.max(.01, end));
+    const action = `<div class="row-actions"><button class="outline" type="submit">${effect ? 'Update effect' : 'Add effect'}</button>${effect ? '<button type="button" id="parallax-add-another">＋ Add another</button><button type="button" id="parallax-cancel">Cancel edit</button>' : ''}</div><p class="animation-note">Timing holds its endpoint. The same effect can be added more than once; each copy keeps its own timing.</p>`;
+
+    let targetMode: TargetMode = 'multi';
+    let body = '';
+    let advanced = '';
+    let conditionalAdvanced = false;
+
     if (preset === 'drift') {
       const value = effect?.kind === 'drift' ? effect : undefined;
-      fields += layerPicker(cfg, [value?.layerIds[0] ?? selectedId], false, selectedId);
-      fields += `<label class="field">Direction<select id="drift-axis"><option value="x" ${value?.axis === 'x' ? 'selected' : ''}>Horizontal</option><option value="y" ${value?.axis === 'y' ? 'selected' : ''}>Vertical</option><option value="xy" ${!value || value.axis === 'xy' ? 'selected' : ''}>Both</option></select></label>
-        <label class="field">Motion<select id="drift-motion"><option value="sway" ${value?.motion !== 'noise' ? 'selected' : ''}>Gentle sway</option><option value="noise" ${value?.motion === 'noise' ? 'selected' : ''}>Irregular</option></select></label>`;
-      fields += input('drift-amplitude', 'Amplitude · pixels', value?.amplitude ?? 12, 0, 400);
-      fields += input('drift-speed', 'Speed · cycles/sec', value?.speed ?? .25, .02, 4);
-      fields += input('drift-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360);
-      fields += input('drift-seed', 'Variation seed', value?.seed ?? 7, 0, 2147483647, 1);
-    }
-    if (preset === 'transform') {
+      targetMode = 'single';
+      body = segmented('drift-axis', 'Movement direction', threeWayAxis, value?.axis ?? 'xy')
+        + `<label class="field"><span class="field-label">Motion style</span><select id="drift-motion"><option value="sway" ${value?.motion !== 'noise' ? 'selected' : ''}>Gentle sway</option><option value="noise" ${value?.motion === 'noise' ? 'selected' : ''}>Irregular</option></select></label>`
+        + numberField('drift-amplitude', 'Movement amount · pixels', value?.amplitude ?? 12, 0, 400, 1)
+        + numberField('drift-speed', 'Speed · cycles per second', value?.speed ?? .25, .02, 4);
+      advanced = numberField('drift-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360)
+        + numberField('drift-seed', 'Variation seed', value?.seed ?? 7, 0, 2147483647, 1);
+    } else if (preset === 'transform') {
       const value = effect?.kind === 'transform' ? effect : undefined;
-      fields += layerPicker(cfg, [value?.layerIds[0] ?? selectedId], false, selectedId);
-      fields += input('transform-scale-from', 'Start scale · %', pct(value?.startScale ?? 1), 10, 400);
-      fields += input('transform-scale-to', 'End scale · %', pct(value?.endScale ?? 1.1), 10, 400);
-      fields += input('transform-rotation-from', 'Start rotation · degrees', value?.startRotation ?? 0, -180, 180);
-      fields += input('transform-rotation-to', 'End rotation · degrees', value?.endRotation ?? 3, -180, 180);
-    }
-    if (preset === 'framing') {
+      targetMode = 'single';
+      body = numberField('transform-scale-from', 'Start scale · %', pct(value?.startScale ?? 1), 10, 400, 1)
+        + numberField('transform-scale-to', 'End scale · %', pct(value?.endScale ?? 1.1), 10, 400, 1)
+        + numberField('transform-rotation-from', 'Start rotation · degrees', value?.startRotation ?? 0, -180, 180)
+        + numberField('transform-rotation-to', 'End rotation · degrees', value?.endRotation ?? 3, -180, 180)
+        + '<p class="animation-note">Scale and rotation interpolate linearly from the start to the end value.</p>';
+    } else if (preset === 'framing') {
       const value = effect?.kind === 'framing' ? effect : undefined;
-      fields += layerPicker(cfg, value?.layerIds, true, selectedId);
-      fields += `<label class="field">Enters from<select id="framing-direction">${directions.map(direction =>
-        `<option value="${direction}" ${(value?.direction ?? 'left') === direction ? 'selected' : ''}>${direction[0].toUpperCase()}${direction.slice(1)}</option>`).join('')}</select></label>`;
-      fields += input('framing-from', 'Start offset · % of frame', value?.startOffset ?? 110, -200, 200);
-      fields += input('framing-to', 'End offset · % of frame', value?.endOffset ?? 0, -200, 200);
-      fields += input('framing-repeat', 'Enter/exit cycles', value?.repeat ?? 1, 1, 8, 1);
-      fields += '<p class="animation-note">100% places the layer just outside the frame; 0% is its arranged position. Even cycles end outside the frame.</p>';
-    }
-    if (preset === 'fade') {
+      body = segmented('framing-direction', 'Entry direction', fourWay('framing'), value?.direction ?? 'left')
+        + numberField('framing-from', 'Start position · % of frame', value?.startOffset ?? 110, -200, 200)
+        + numberField('framing-to', 'End position · % of frame', value?.endOffset ?? 0, -200, 200)
+        + '<p class="animation-note">100% places the layer just outside the frame; 0% is its arranged position.</p>';
+      advanced = numberField('framing-repeat', 'Enter / exit cycles', value?.repeat ?? 1, 1, 8, 1)
+        + '<p class="animation-note">Repeated cycles alternate between entering and leaving the frame.</p>';
+    } else if (preset === 'fade') {
       const value = effect?.kind === 'fade' ? effect : undefined;
-      fields += layerPicker(cfg, value?.layerIds, true, selectedId);
-      fields += input('fade-from', 'Start opacity · %', pct(value?.startOpacity ?? 0), 0, 100);
-      fields += input('fade-to', 'End opacity · %', pct(value?.endOpacity ?? 1), 0, 100);
-      fields += '<p class="animation-note">Opacity multiplies the layer’s Arrange opacity. Other layers keep theirs.</p>';
-    }
-    if (preset === 'reveal') {
+      body = numberField('fade-from', 'Start opacity · %', pct(value?.startOpacity ?? 0), 0, 100, 1)
+        + numberField('fade-to', 'End opacity · %', pct(value?.endOpacity ?? 1), 0, 100, 1)
+        + '<p class="animation-note">Opacity multiplies the layer’s Arrange opacity. Other layers keep theirs.</p>';
+    } else if (preset === 'reveal') {
       const value = effect?.kind === 'reveal' ? effect : undefined;
-      fields += layerPicker(cfg, [value?.layerIds[0] ?? selectedId], false, selectedId);
-      fields += `<label class="field">Mask<select id="reveal-mask"><option value="wipe" ${value?.mask !== 'radial' ? 'selected' : ''}>Directional wipe</option><option value="radial" ${value?.mask === 'radial' ? 'selected' : ''}>Radial reveal</option></select></label>`;
-      fields += `<label class="field">Direction<select id="reveal-direction">${directions.map(direction =>
-        `<option value="${direction}" ${(value?.direction ?? 'left') === direction ? 'selected' : ''}>${direction[0].toUpperCase()}${direction.slice(1)}</option>`).join('')}</select></label>`;
-      fields += input('reveal-origin-x', 'Origin X · % of frame', pct(value?.originX ?? .5), 0, 100);
-      fields += input('reveal-origin-y', 'Origin Y · % of frame', pct(value?.originY ?? .5), 0, 100);
-      fields += input('reveal-from', 'Start coverage · %', pct(value?.startCoverage ?? 0), 0, 100);
-      fields += input('reveal-to', 'End coverage · %', pct(value?.endCoverage ?? 1), 0, 100);
-      fields += input('reveal-softness', 'Edge softness · %', pct(value?.softness ?? .35), 0, 100);
-      fields += '<p class="animation-note">Direction applies to wipes; origin applies to radial reveals.</p>';
-    }
-    if (preset === 'wind') {
+      targetMode = 'single';
+      body = segmented('reveal-mask', 'Reveal style', [
+        { value: 'wipe', label: 'Directional wipe' }, { value: 'radial', label: 'Radial reveal' },
+      ], value?.mask ?? 'wipe')
+        + `<div data-show-mask="wipe">${segmented('reveal-direction', 'Reveal from', fourWay('reveal'), value?.direction ?? 'left')}</div>`
+        + numberField('reveal-from', 'Reveal from · %', pct(value?.startCoverage ?? 0), 0, 100, 1)
+        + numberField('reveal-to', 'Reveal to · %', pct(value?.endCoverage ?? 1), 0, 100, 1)
+        + numberField('reveal-softness', 'Edge softness · %', pct(value?.softness ?? .35), 0, 100, 1);
+      advanced = `<div data-show-mask="radial">${numberField('reveal-origin-x', 'Origin X · % of frame', pct(value?.originX ?? .5), 0, 100, 1)
+        + numberField('reveal-origin-y', 'Origin Y · % of frame', pct(value?.originY ?? .5), 0, 100, 1)}</div>`;
+      conditionalAdvanced = true;
+    } else if (preset === 'wind') {
       const value = effect?.kind === 'wind' ? effect : undefined;
-      fields += layerPicker(cfg, value?.layerIds, true, selectedId);
-      fields += `<label class="field">Wind direction<select id="wind-direction"><option value="left" ${value?.direction !== 'right' ? 'selected' : ''}>From the right · push left</option><option value="right" ${value?.direction === 'right' ? 'selected' : ''}>From the left · push right</option></select></label>`;
-      fields += input('wind-pivot-x', 'Pivot X · % of layer', pct(value?.pivotX ?? .5), 0, 100);
-      fields += input('wind-pivot-y', 'Pivot Y · % of layer', pct(value?.pivotY ?? 1), 0, 100);
-      fields += input('wind-rotation', 'Rotation amplitude · degrees', value?.rotation ?? 4, 0, 30);
-      fields += input('wind-movement', 'Secondary movement · pixels', value?.movement ?? 5, 0, 120);
-      fields += input('wind-speed', 'Speed · cycles/sec', value?.speed ?? .35, .02, 3);
-      fields += input('wind-gust', 'Gust intensity · %', pct(value?.gust ?? .3), 0, 100);
-      fields += input('wind-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360);
-      fields += input('wind-spread', 'Phase spread per layer · degrees', value?.spread ?? 35, 0, 180);
-      fields += '<p class="animation-note">Rotation happens around the pivot; the pivot defaults to bottom centre for foliage. Phase spread keeps multiple layers from swaying in unison.</p>';
-    }
-    if (preset === 'float') {
+      body = segmented('wind-direction', 'Wind direction', [
+        { value: 'right', label: 'Push right', title: 'Wind from the left' }, { value: 'left', label: 'Push left', title: 'Wind from the right' },
+      ], value?.direction ?? 'right')
+        + numberField('wind-rotation', 'Bending amount · degrees', value?.rotation ?? 4, 0, 30)
+        + numberField('wind-speed', 'Speed · cycles per second', value?.speed ?? .35, .02, 3)
+        + numberField('wind-gust', 'Gust intensity · %', pct(value?.gust ?? .3), 0, 100, 1);
+      advanced = numberField('wind-pivot-x', 'Pivot X · % of layer', pct(value?.pivotX ?? .5), 0, 100, 1)
+        + numberField('wind-pivot-y', 'Pivot Y · % of layer', pct(value?.pivotY ?? 1), 0, 100, 1, '100% is the bottom edge')
+        + numberField('wind-movement', 'Secondary movement · pixels', value?.movement ?? 5, 0, 120)
+        + numberField('wind-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360)
+        + numberField('wind-spread', 'Phase spread per layer · degrees', value?.spread ?? 35, 0, 180)
+        + '<p class="animation-note">Rotation happens around the pivot; the default bottom centre suits foliage. Phase spread keeps multiple layers from swaying in unison.</p>';
+    } else if (preset === 'float') {
       const value = effect?.kind === 'float' ? effect : undefined;
-      fields += layerPicker(cfg, value?.layerIds, true, selectedId);
-      fields += `<label class="field">Movement<select id="float-axis"><option value="y" ${value?.axis !== 'x' && value?.axis !== 'xy' ? 'selected' : ''}>Vertical bobbing</option><option value="x" ${value?.axis === 'x' ? 'selected' : ''}>Horizontal floating</option><option value="xy" ${value?.axis === 'xy' ? 'selected' : ''}>Combined</option></select></label>`;
-      fields += input('float-amplitude', 'Amplitude · pixels', value?.amplitude ?? 14, 0, 200);
-      fields += input('float-speed', 'Speed · cycles/sec', value?.speed ?? .35, .02, 3);
-      fields += input('float-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360);
-      fields += input('float-rotation', 'Secondary rotation · degrees', value?.rotation ?? 0, -6, 6);
-      fields += '<p class="animation-note">Motion is positional and periodic; amplitude fades in and out so seeking and loops stay smooth.</p>';
-    }
-    if (preset === 'ambient') {
+      body = segmented('float-axis', 'Movement style', [
+        { value: 'y', label: 'Vertical' }, { value: 'x', label: 'Horizontal' }, { value: 'xy', label: 'Combined' },
+      ], value?.axis ?? 'y')
+        + numberField('float-amplitude', 'Movement amount · pixels', value?.amplitude ?? 14, 0, 200, 1)
+        + numberField('float-speed', 'Speed · cycles per second', value?.speed ?? .35, .02, 3);
+      advanced = numberField('float-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360)
+        + numberField('float-rotation', 'Secondary rotation · degrees', value?.rotation ?? 0, -6, 6)
+        + '<p class="animation-note">Motion is positional and periodic; the amount fades in and out so seeking and loops stay smooth.</p>';
+    } else if (preset === 'ambient') {
       const value = effect?.kind === 'ambient' ? effect : undefined;
-      fields += layerPicker(cfg, [value?.layerIds[0] ?? selectedId], false, selectedId);
-      fields += `<label class="field">Mode<select id="ambient-mode"><option value="layer" ${value?.mode !== 'particles' ? 'selected' : ''}>Layer loop</option><option value="particles" ${value?.mode === 'particles' ? 'selected' : ''}>Particle loop</option></select></label>`;
-      fields += `<label class="field">Motion<select id="ambient-motion"><option value="oscillate" ${value?.motion !== 'drift' && value?.motion !== 'pulse' ? 'selected' : ''}>Gentle oscillation</option><option value="drift" ${value?.motion === 'drift' ? 'selected' : ''}>Continuous drift</option><option value="pulse" ${value?.motion === 'pulse' ? 'selected' : ''}>Opacity pulse</option></select></label>`;
-      fields += `<label class="field">Direction<select id="ambient-direction">${(['left','right','up','down'] as const).map(direction => `<option value="${direction}" ${(value?.direction ?? 'left') === direction ? 'selected' : ''}>${direction[0].toUpperCase()}${direction.slice(1)}</option>`).join('')}</select></label>`;
-      fields += input('ambient-amplitude', 'Amplitude · px or pulse %', value?.amplitude ?? 40, 0, 400);
-      fields += input('ambient-speed', 'Drift speed · pixels/sec', value?.speed ?? 12, 0, 200);
-      fields += input('ambient-loop', 'Oscillation / pulse period · seconds', value?.loop ?? 8, .25, 120);
-      fields += input('ambient-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360);
-      fields += `<label class="field"><span>Tileable artwork (drift only)</span><input id="ambient-tileable" type="checkbox" ${value?.tileable ? 'checked' : ''}></label>`;
-      fields += `<details class="parallax-subsection"><summary>Particle settings</summary>
-        ${input('ambient-count', 'Count', value?.count ?? 24, 1, 80, 1)}
-        ${input('ambient-speed-min', 'Speed min · px/sec', value?.speedMin ?? 8, 0, 200)}
-        ${input('ambient-speed-max', 'Speed max · px/sec', value?.speedMax ?? 28, 0, 200)}
-        ${input('ambient-size-min', 'Size min · pixels', value?.sizeMin ?? 6, 1, 240)}
-        ${input('ambient-size-max', 'Size max · pixels', value?.sizeMax ?? 18, 1, 240)}
-        ${input('ambient-opacity-min', 'Opacity min · %', pct(value?.opacityMin ?? .15), 0, 100)}
-        ${input('ambient-opacity-max', 'Opacity max · %', pct(value?.opacityMax ?? .65), 0, 100)}
-        ${input('ambient-lifetime', 'Lifetime · seconds', value?.lifetime ?? 6, .5, 120)}
-        ${input('ambient-region-x', 'Region X · % of frame', pct(value?.regionX ?? 0), 0, 100)}
-        ${input('ambient-region-y', 'Region Y · % of frame', pct(value?.regionY ?? 0), 0, 100)}
-        ${input('ambient-region-width', 'Region width · % of frame', pct(value?.regionWidth ?? 1), 2, 100)}
-        ${input('ambient-region-height', 'Region height · % of frame', pct(value?.regionHeight ?? 1), 2, 100)}
-        ${input('ambient-seed', 'Variation seed', value?.seed ?? 11, 0, 2147483647, 1)}
-        <p class="animation-note">Particle mode uses the selected transparent artwork as its texture. Positions and lifetimes are calculated from absolute time with a fixed seed, never accumulated.</p>
-      </details>`;
-      fields += '<p class="animation-note">Layer mode uses amplitude, speed, period and tileable. Particle mode uses the settings above. Only mark artwork tileable when its edges actually repeat.</p>';
-    }
-    if (preset === 'shadow') {
+      targetMode = 'single';
+      body = segmented('ambient-mode', 'Mode', [
+        { value: 'layer', label: 'Layer loop' }, { value: 'particles', label: 'Particle loop' },
+      ], value?.mode ?? 'layer')
+        + `<div class="parallax-conditional" data-show-mode="layer">
+          <label class="field"><span class="field-label">Motion</span><select id="ambient-motion"><option value="oscillate" ${value?.motion !== 'drift' && value?.motion !== 'pulse' ? 'selected' : ''}>Gentle oscillation</option><option value="drift" ${value?.motion === 'drift' ? 'selected' : ''}>Continuous drift</option><option value="pulse" ${value?.motion === 'pulse' ? 'selected' : ''}>Opacity pulse</option></select></label>
+          <div data-show-motion="oscillate,drift">${segmented('ambient-direction', 'Direction', fourWay('ambient'), value?.direction ?? 'right')}</div>
+          <div data-show-motion="oscillate,pulse">${numberField('ambient-amplitude', 'Movement amount · pixels / pulse %', value?.amplitude ?? 40, 0, 400, 1)}</div>
+          <div data-show-motion="drift">${numberField('ambient-speed', 'Drift speed · pixels per second', value?.speed ?? 12, 0, 200, 1)}</div>
+          <div data-show-motion="oscillate,pulse">${numberField('ambient-loop', 'Loop period · seconds', value?.loop ?? 8, .25, 120)}</div>
+        </div>
+        <div class="parallax-conditional" data-show-mode="particles">
+          ${segmented('ambient-particle-direction', 'Direction', fourWay('ambient-particle'), value?.direction ?? 'right')}
+          ${numberField('ambient-count', 'Particle count', value?.count ?? 24, 1, 80, 1)}
+          ${numberField('ambient-speed-min', 'Speed minimum · pixels/sec', value?.speedMin ?? 8, 0, 200, 1)}
+          ${numberField('ambient-speed-max', 'Speed maximum · pixels/sec', value?.speedMax ?? 28, 0, 200, 1)}
+          ${numberField('ambient-size-min', 'Size minimum · pixels', value?.sizeMin ?? 6, 1, 240, 1)}
+          ${numberField('ambient-size-max', 'Size maximum · pixels', value?.sizeMax ?? 18, 1, 240, 1)}
+          ${numberField('ambient-opacity-min', 'Opacity minimum · %', pct(value?.opacityMin ?? .15), 0, 100, 1)}
+          ${numberField('ambient-opacity-max', 'Opacity maximum · %', pct(value?.opacityMax ?? .65), 0, 100, 1)}
+          <p class="animation-note">Particle mode uses the selected transparent artwork as its texture.</p>
+        </div>`;
+      advanced = `<div data-show-mode="layer" data-show-motion="oscillate,pulse">${numberField('ambient-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360)}</div>
+        <div data-show-mode="layer" data-show-motion="drift">${toggleField('ambient-tileable', 'Tileable artwork', value?.tileable === true, 'only continuous drift wraps edges')}</div>
+        <div data-show-mode="particles">
+          ${numberField('ambient-lifetime', 'Lifetime · seconds', value?.lifetime ?? 6, .5, 120)}
+          <div class="parallax-settings-subtitle">Emission region · % of frame</div>
+          <div class="parallax-pair-grid">
+            ${numberField('ambient-region-x', 'Region X · %', pct(value?.regionX ?? 0), 0, 100, 1)}
+            ${numberField('ambient-region-y', 'Region Y · %', pct(value?.regionY ?? 0), 0, 100, 1)}
+            ${numberField('ambient-region-width', 'Region width · %', pct(value?.regionWidth ?? 1), 2, 100, 1)}
+            ${numberField('ambient-region-height', 'Region height · %', pct(value?.regionHeight ?? 1), 2, 100, 1)}
+          </div>
+          ${numberField('ambient-seed', 'Variation seed', value?.seed ?? 11, 0, 2147483647, 1)}
+          <p class="animation-note">Positions and lifetimes are calculated from absolute time with a fixed seed, never accumulated.</p>
+        </div>`;
+      conditionalAdvanced = true;
+    } else if (preset === 'shadow') {
       const value = effect?.kind === 'shadow' ? effect : undefined;
-      fields += layerPicker(cfg, value?.layerIds, true, selectedId);
-      fields += input('shadow-angle', 'Direction · degrees', value?.angle ?? 90, -180, 180);
-      fields += input('shadow-distance', 'Offset · pixels', value?.distance ?? 18, 0, 200);
-      fields += input('shadow-opacity', 'Opacity · %', pct(value?.opacity ?? .35), 0, 100);
-      fields += input('shadow-blur', 'Softness · pixels', value?.blur ?? 8, 0, 60);
-      fields += `<label class="field">Colour<input id="shadow-color" type="color" value="${value?.color ?? '#000000'}"></label>`;
-      fields += input('shadow-speed', 'Movement speed · cycles/sec', value?.speed ?? .15, .01, 2);
-      fields += input('shadow-amplitude', 'Movement amplitude · pixels', value?.amplitude ?? 4, 0, 80);
-      fields += input('shadow-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360);
-      fields += '<p class="animation-note">The shadow uses the layer silhouette, renders beneath it and follows the layer opacity, rotation and camera projection.</p>';
-    }
-    if (preset === 'warp') {
+      const angle = value?.angle ?? 90;
+      body = `<div class="parallax-direction-picks" role="group" aria-label="Shadow direction quick pick">${([
+        ['Right', 0], ['Down', 90], ['Left', 180], ['Up', -90],
+      ] as const).map(([label, degrees]) => `<button type="button" data-shadow-direction="${degrees}" class="${angle === degrees ? 'active' : ''}">${label}</button>`).join('')}</div>`
+        + numberField('shadow-angle', 'Direction · degrees', angle, -180, 180)
+        + numberField('shadow-distance', 'Offset distance · pixels', value?.distance ?? 18, 0, 200)
+        + numberField('shadow-opacity', 'Shadow opacity · %', pct(value?.opacity ?? .35), 0, 100, 1)
+        + numberField('shadow-blur', 'Shadow softness · pixels', value?.blur ?? 8, 0, 60)
+        + `<label class="field"><span class="field-label">Shadow colour</span><input id="shadow-color" type="color" value="${value?.color ?? '#000000'}"></label>`
+        + '<p class="animation-note">The shadow uses the layer silhouette and renders beneath it, following the layer opacity, rotation and camera projection.</p>';
+      advanced = numberField('shadow-speed', 'Movement speed · cycles per second', value?.speed ?? .15, .01, 2)
+        + numberField('shadow-amplitude', 'Movement amplitude · pixels', value?.amplitude ?? 4, 0, 80)
+        + numberField('shadow-phase', 'Phase · degrees', value?.phase ?? 0, -360, 360);
+    } else if (preset === 'warp') {
       const value = effect?.kind === 'warp' ? effect : undefined;
-      const corner = (index: number) => ({ x: value?.corners[index].x ?? [-1, 1, 1, -1][index], y: value?.corners[index].y ?? [-1, -1, 1, 1][index] });
-      fields += layerPicker(cfg, [value?.layerIds[0] ?? selectedId], false, selectedId);
-      fields += '<fieldset class="parallax-layers"><legend>Corner positions · % of layer half-size</legend>';
-      for (const [index, label] of ['Top left', 'Top right', 'Bottom right', 'Bottom left'].entries()) {
-        const point = corner(index);
-        fields += `<div class="parallax-corner"><b>${label}</b>${input(`warp-${index}-x`, 'X', pct(point.x), -200, 200)}${input(`warp-${index}-y`, 'Y', pct(point.y), -200, 200)}</div>`;
-      }
-      fields += '</fieldset>';
-      fields += '<button type="button" id="warp-neutral">Reset corners to neutral</button>';
-      fields += '<p class="animation-note">Neutral is the unwarped layer. The warp animates from neutral to the configured corners and composes with camera movement. It deforms a flat image; it cannot reveal hidden sides.</p>';
+      targetMode = 'single';
+      body = '<p class="animation-note">Perspective Warp is an advanced deformation. Pick the artwork and timing here; corner positions live in Advanced settings.</p>';
+      const corner = (index: number) => ({ x: value?.corners[index].x ?? [-1, 1, 1, -1][index]!, y: value?.corners[index].y ?? [-1, -1, 1, 1][index]! });
+      advanced = '<fieldset class="parallax-layers"><legend>Corner positions · % of layer half-size</legend>'
+        + ['Top left', 'Top right', 'Bottom right', 'Bottom left'].map((label, index) => {
+          const point = corner(index);
+          return `<div class="parallax-corner"><b>${label}</b>${numberField(`warp-${index}-x`, 'X · %', pct(point.x), -200, 200, 1)}${numberField(`warp-${index}-y`, 'Y · %', pct(point.y), -200, 200, 1)}</div>`;
+        }).join('')
+        + '</fieldset><button type="button" id="warp-neutral">Reset corners to neutral</button>'
+        + '<p class="animation-note">Neutral is the unwarped layer; the warp animates from neutral to these corners. It deforms a flat image and cannot reveal hidden sides.</p>';
+    } else {
+      throw new Error('Unsupported layer effect');
     }
-    inspector.innerHTML = `<h3>${names[preset]}</h3><p class="animation-note">Timing is measured from the start of the scene and holds its endpoint.</p><form id="parallax-form">${fields}<p class="animation-note">Coordinates are scene pixels, measured from the top left.</p>${action}</form>`;
-    if (effect) $('parallax-cancel').onclick = () => { editing = ''; render(); };
-    if (effect) $('parallax-add-another').onclick = () => { editing = ''; render(); };
+
+    inspector.innerHTML = `<h3>${names[preset as Feature]}</h3><form id="parallax-form" novalidate>${basicSection(`<div id="parallax-targets" class="parallax-targets"></div>${body}${timing}`)}${advanced ? advancedSection(advanced, conditionalAdvanced) : ''}${action}</form>`;
+
+    mountPicker(cfg, effect, targetMode);
+    if (preset === 'reveal' || preset === 'ambient') {
+      syncConditionals(inspector);
+      const form = $('parallax-form');
+      form.addEventListener('change', () => syncConditionals(inspector));
+      form.addEventListener('input', event => {
+        const target = event.target as HTMLElement;
+        if (target.id === 'ambient-motion' || target.closest('.segmented')) syncConditionals(inspector);
+      });
+    }
+    inspector.querySelectorAll<HTMLButtonElement>('[data-shadow-direction]').forEach(button => {
+      button.onclick = () => {
+        const field = document.getElementById('shadow-angle') as HTMLInputElement | null;
+        if (field) field.value = button.dataset.shadowDirection ?? field.value;
+        inspector.querySelectorAll('[data-shadow-direction]').forEach(candidate => candidate.classList.toggle('active', candidate === button));
+      };
+    });
     if (preset === 'warp') {
       $<HTMLButtonElement>('warp-neutral').onclick = () => {
         const neutral = [[-100, -100], [100, -100], [100, 100], [-100, 100]];
@@ -388,31 +582,118 @@ export function createParallaxWorkspace(options: {
         });
       };
     }
+    if (effect) {
+      $('parallax-cancel').onclick = () => { editing = ''; render(); };
+      $('parallax-add-another').onclick = () => { editing = ''; render(); };
+    }
+
     $('parallax-form').onsubmit = event => {
       event.preventDefault();
-      const val = (id: string, fallback: number) => {
-        const field = document.getElementById(id) as HTMLInputElement | null;
-        return field ? field.valueAsNumber : fallback;
-      };
-      const picked = preset === 'drift' || preset === 'transform' || preset === 'reveal' || preset === 'ambient' || preset === 'warp'
-        ? [$<HTMLSelectElement>('parallax-layer').value]
-        : [...document.querySelectorAll<HTMLInputElement>('input[name=parallax-layer]:checked')].map(i => i.value);
+      const picked = activePicker?.selected() ?? [];
       if (!picked.length) { options.notify('Select at least one layer.'); return; }
-      const base = { id: effect?.id ?? crypto.randomUUID(), start: val('parallax-start', 0), duration: val('parallax-duration', 1), layerIds: picked };
-      let built: LayerEffect;
-      if (preset === 'drift') built = { ...base, kind: 'drift', axis: $<HTMLSelectElement>('drift-axis').value as 'x' | 'y' | 'xy', motion: $<HTMLSelectElement>('drift-motion').value as 'sway' | 'noise', amplitude: val('drift-amplitude', 12), speed: val('drift-speed', .25), phase: val('drift-phase', 0), seed: val('drift-seed', 7) };
-      else if (preset === 'transform') built = { ...base, kind: 'transform', startScale: val('transform-scale-from', 100) / 100, endScale: val('transform-scale-to', 110) / 100, startRotation: val('transform-rotation-from', 0), endRotation: val('transform-rotation-to', 3) };
-      else if (preset === 'framing') built = { ...base, kind: 'framing', direction: $<HTMLSelectElement>('framing-direction').value as FrameDirection, startOffset: val('framing-from', 110), endOffset: val('framing-to', 0), repeat: val('framing-repeat', 1) };
-      else if (preset === 'fade') built = { ...base, kind: 'fade', startOpacity: val('fade-from', 0) / 100, endOpacity: val('fade-to', 100) / 100 };
-      else if (preset === 'wind') built = { ...base, kind: 'wind', direction: $<HTMLSelectElement>('wind-direction').value as 'left' | 'right', pivotX: val('wind-pivot-x', 50) / 100, pivotY: val('wind-pivot-y', 100) / 100, rotation: val('wind-rotation', 4), movement: val('wind-movement', 5), speed: val('wind-speed', .35), gust: val('wind-gust', 30) / 100, phase: val('wind-phase', 0), spread: val('wind-spread', 35) };
-      else if (preset === 'float') built = { ...base, kind: 'float', axis: $<HTMLSelectElement>('float-axis').value as 'x' | 'y' | 'xy', amplitude: val('float-amplitude', 14), speed: val('float-speed', .35), phase: val('float-phase', 0), rotation: val('float-rotation', 0) };
-      else if (preset === 'ambient') built = { ...base, kind: 'ambient', mode: $<HTMLSelectElement>('ambient-mode').value as 'layer' | 'particles', motion: $<HTMLSelectElement>('ambient-motion').value as 'drift' | 'oscillate' | 'pulse', direction: $<HTMLSelectElement>('ambient-direction').value as 'left' | 'right' | 'up' | 'down', amplitude: val('ambient-amplitude', 40), speed: val('ambient-speed', 12), loop: val('ambient-loop', 8), phase: val('ambient-phase', 0), tileable: $<HTMLInputElement>('ambient-tileable').checked, count: val('ambient-count', 24), speedMin: val('ambient-speed-min', 8), speedMax: val('ambient-speed-max', 28), sizeMin: val('ambient-size-min', 6), sizeMax: val('ambient-size-max', 18), opacityMin: val('ambient-opacity-min', 15) / 100, opacityMax: val('ambient-opacity-max', 65) / 100, lifetime: val('ambient-lifetime', 6), regionX: val('ambient-region-x', 0) / 100, regionY: val('ambient-region-y', 0) / 100, regionWidth: val('ambient-region-width', 100) / 100, regionHeight: val('ambient-region-height', 100) / 100, seed: val('ambient-seed', 11) };
-      else if (preset === 'shadow') built = { ...base, kind: 'shadow', angle: val('shadow-angle', 90), distance: val('shadow-distance', 18), opacity: val('shadow-opacity', 35) / 100, blur: val('shadow-blur', 8), color: $<HTMLInputElement>('shadow-color').value, speed: val('shadow-speed', .15), amplitude: val('shadow-amplitude', 4), phase: val('shadow-phase', 0) };
-      else if (preset === 'reveal') built = { ...base, kind: 'reveal', mask: $<HTMLSelectElement>('reveal-mask').value as MaskKind, direction: $<HTMLSelectElement>('reveal-direction').value as FrameDirection, originX: val('reveal-origin-x', 50) / 100, originY: val('reveal-origin-y', 50) / 100, startCoverage: val('reveal-from', 0) / 100, endCoverage: val('reveal-to', 100) / 100, softness: val('reveal-softness', 35) / 100 };
-      else if (preset === 'warp') built = { ...base, kind: 'warp', corners: [0, 1, 2, 3].map(index => ({ x: val(`warp-${index}-x`, 100 * [-1, 1, 1, -1][index]) / 100, y: val(`warp-${index}-y`, 100 * [-1, -1, 1, 1][index]) / 100 })) as [{x:number;y:number},{x:number;y:number},{x:number;y:number},{x:number;y:number}] };
-      else throw new Error('Unsupported layer effect');
+      let failure = '';
+      const read = (id: string, label: string, min: number, max: number) => {
+        const field = document.getElementById(id) as HTMLInputElement | null;
+        const value = field?.valueAsNumber;
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+          if (!failure) failure = `${label} must be between ${min} and ${max}.`;
+          return min;
+        }
+        return value;
+      };
+      const whole = (id: string, label: string, min: number, max: number) => Math.round(read(id, label, min, max));
+      const startTime = read('parallax-start', 'Start', 0, Math.max(0, duration - .01));
+      const lengthTime = read('parallax-duration', 'Duration', .01, Math.max(.01, duration - startTime));
+      const base = { id: effect?.id ?? crypto.randomUUID(), start: startTime, duration: lengthTime, layerIds: picked };
+      let built: LayerEffect | undefined;
+      if (preset === 'drift') {
+        built = { ...base, kind: 'drift', axis: (checkedValue('drift-axis') || 'xy') as DriftAxis,
+          motion: ($('drift-motion') as HTMLSelectElement).value as DriftMotion,
+          amplitude: read('drift-amplitude', 'Movement amount', 0, 400),
+          speed: read('drift-speed', 'Speed', .02, 4),
+          phase: read('drift-phase', 'Phase', -360, 360),
+          seed: whole('drift-seed', 'Variation seed', 0, 2147483647) };
+      } else if (preset === 'transform') {
+        built = { ...base, kind: 'transform', startScale: read('transform-scale-from', 'Start scale', 10, 400) / 100,
+          endScale: read('transform-scale-to', 'End scale', 10, 400) / 100,
+          startRotation: read('transform-rotation-from', 'Start rotation', -180, 180),
+          endRotation: read('transform-rotation-to', 'End rotation', -180, 180) };
+      } else if (preset === 'framing') {
+        built = { ...base, kind: 'framing', direction: (checkedValue('framing-direction') || 'left') as FrameDirection,
+          startOffset: read('framing-from', 'Start position', -200, 200),
+          endOffset: read('framing-to', 'End position', -200, 200),
+          repeat: whole('framing-repeat', 'Enter / exit cycles', 1, 8) };
+      } else if (preset === 'fade') {
+        built = { ...base, kind: 'fade', startOpacity: read('fade-from', 'Start opacity', 0, 100) / 100,
+          endOpacity: read('fade-to', 'End opacity', 0, 100) / 100 };
+      } else if (preset === 'reveal') {
+        built = { ...base, kind: 'reveal', mask: (checkedValue('reveal-mask') || 'wipe') as MaskKind,
+          direction: (checkedValue('reveal-direction') || 'left') as FrameDirection,
+          originX: read('reveal-origin-x', 'Origin X', 0, 100) / 100,
+          originY: read('reveal-origin-y', 'Origin Y', 0, 100) / 100,
+          startCoverage: read('reveal-from', 'Reveal from', 0, 100) / 100,
+          endCoverage: read('reveal-to', 'Reveal to', 0, 100) / 100,
+          softness: read('reveal-softness', 'Edge softness', 0, 100) / 100 };
+      } else if (preset === 'wind') {
+        built = { ...base, kind: 'wind', direction: (checkedValue('wind-direction') || 'right') as WindDirection,
+          pivotX: read('wind-pivot-x', 'Pivot X', 0, 100) / 100,
+          pivotY: read('wind-pivot-y', 'Pivot Y', 0, 100) / 100,
+          rotation: read('wind-rotation', 'Bending amount', 0, 30),
+          movement: read('wind-movement', 'Secondary movement', 0, 120),
+          speed: read('wind-speed', 'Speed', .02, 3),
+          gust: read('wind-gust', 'Gust intensity', 0, 100) / 100,
+          phase: read('wind-phase', 'Phase', -360, 360),
+          spread: read('wind-spread', 'Phase spread', 0, 180) };
+      } else if (preset === 'float') {
+        built = { ...base, kind: 'float', axis: (checkedValue('float-axis') || 'y') as DriftAxis,
+          amplitude: read('float-amplitude', 'Movement amount', 0, 200),
+          speed: read('float-speed', 'Speed', .02, 3),
+          phase: read('float-phase', 'Phase', -360, 360),
+          rotation: read('float-rotation', 'Secondary rotation', -6, 6) };
+      } else if (preset === 'ambient') {
+        const mode = (checkedValue('ambient-mode') || 'layer') as AmbientMode;
+        const motion = ($('ambient-motion') as HTMLSelectElement).value as AmbientMotion;
+        const direction = (mode === 'particles' ? checkedValue('ambient-particle-direction') : checkedValue('ambient-direction')) as AmbientDirection;
+        built = { ...base, kind: 'ambient', mode, motion, direction: direction || 'right',
+          amplitude: read('ambient-amplitude', 'Movement amount', 0, 400),
+          speed: read('ambient-speed', 'Drift speed', 0, 200),
+          loop: read('ambient-loop', 'Loop period', .25, 120),
+          phase: read('ambient-phase', 'Phase', -360, 360),
+          tileable: ($('ambient-tileable') as HTMLInputElement).checked,
+          count: whole('ambient-count', 'Particle count', 1, 80),
+          speedMin: read('ambient-speed-min', 'Speed minimum', 0, 200),
+          speedMax: read('ambient-speed-max', 'Speed maximum', 0, 200),
+          sizeMin: read('ambient-size-min', 'Size minimum', 1, 240),
+          sizeMax: read('ambient-size-max', 'Size maximum', 1, 240),
+          opacityMin: read('ambient-opacity-min', 'Opacity minimum', 0, 100) / 100,
+          opacityMax: read('ambient-opacity-max', 'Opacity maximum', 0, 100) / 100,
+          lifetime: read('ambient-lifetime', 'Lifetime', .5, 120),
+          regionX: read('ambient-region-x', 'Region X', 0, 100) / 100,
+          regionY: read('ambient-region-y', 'Region Y', 0, 100) / 100,
+          regionWidth: read('ambient-region-width', 'Region width', 2, 100) / 100,
+          regionHeight: read('ambient-region-height', 'Region height', 2, 100) / 100,
+          seed: whole('ambient-seed', 'Variation seed', 0, 2147483647) };
+      } else if (preset === 'shadow') {
+        const colorField = $<HTMLInputElement>('shadow-color');
+        built = { ...base, kind: 'shadow', angle: read('shadow-angle', 'Direction', -180, 180),
+          distance: read('shadow-distance', 'Offset distance', 0, 200),
+          opacity: read('shadow-opacity', 'Shadow opacity', 0, 100) / 100,
+          blur: read('shadow-blur', 'Shadow softness', 0, 60),
+          color: /^#[0-9a-fA-F]{6}$/.test(colorField.value) ? colorField.value.toLowerCase() : '#000000',
+          speed: read('shadow-speed', 'Movement speed', .01, 2),
+          amplitude: read('shadow-amplitude', 'Movement amplitude', 0, 80),
+          phase: read('shadow-phase', 'Phase', -360, 360) };
+      } else if (preset === 'warp') {
+        const labels = ['Top left', 'Top right', 'Bottom right', 'Bottom left'];
+        built = { ...base, kind: 'warp', corners: [0, 1, 2, 3].map(index => ({
+          x: read(`warp-${index}-x`, `${labels[index]} X`, -200, 200) / 100,
+          y: read(`warp-${index}-y`, `${labels[index]} Y`, -200, 200) / 100,
+        })) as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] };
+      }
+      if (failure) { options.notify(failure); return; }
+      if (!built) { options.notify('Unsupported layer effect'); return; }
       const next = structuredClone(cfg);
-      next.layerEffects = effect ? (next.layerEffects ?? []).map(old => old.id === effect.id ? built : old) : [...(next.layerEffects ?? []), built];
+      next.layerEffects = effect ? (next.layerEffects ?? []).map(old => old.id === effect.id ? built! : old) : [...(next.layerEffects ?? []), built];
       editing = built.id;
       void save(next);
     };
