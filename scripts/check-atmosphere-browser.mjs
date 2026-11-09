@@ -90,6 +90,8 @@ try {
   await studio.locator('[data-tab="atmosphere"]').click();
   await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   assert.equal(await studio.locator('.atmosphere-pane').isVisible(), true);
+  assert.equal(await studio.locator('#atmosphere-depth-count').innerText(), '7', 'depth count badge is shown');
+  assert.equal(await studio.locator('#atmosphere-weather-count').innerText(), '7', 'weather count badge is shown');
   await studio.locator('#atmosphere-depth-effects summary').click();
   await studio.locator('#atmosphere-weather-effects summary').click();
   assert.equal(await studio.locator('[data-atmosphere]').count(), 14, 'all fourteen effects are offered');
@@ -109,6 +111,19 @@ try {
   };
   for (const kind of kinds) {
     await studio.locator(`[data-atmosphere="${kind}"]`).click();
+    if (kind === 'fog') {
+      assert.equal(await studio.locator('.number-wrap:has(#atmos-density) .number-step').count(), 2, 'atmosphere fields use the shared stepper');
+      assert.equal(await studio.locator('#atmosphere-inspector').evaluate(node => getComputedStyle(node).colorScheme), 'dark', 'atmosphere native controls are dark');
+      assert.equal(await studio.locator('#atmos-density').evaluate(node => getComputedStyle(node).appearance), 'textfield', 'native spinners are suppressed');
+      const before = Number(await studio.locator('#atmos-density').inputValue());
+      await studio.locator('.number-wrap:has(#atmos-density) [data-step=up]').click();
+      assert.equal(Number(await studio.locator('#atmos-density').inputValue()), before + 1, 'atmosphere stepper increments');
+      await studio.locator('.number-wrap:has(#atmos-density) [data-step=down]').click();
+      assert.equal(Number(await studio.locator('#atmos-density').inputValue()), before, 'atmosphere stepper decrements');
+    }
+    if (kind === 'foliage') {
+      assert.notEqual(await studio.locator('#atmos-direction').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)', 'atmosphere selects are dark');
+    }
     if (['haze', 'light', 'defocus', 'leaves'].includes(kind)) {
       await studio.locator('#atmos-target-mode').selectOption('layers');
       await studio.locator('input[name=atmos-layer]').first().check();

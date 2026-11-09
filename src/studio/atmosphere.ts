@@ -4,6 +4,7 @@ import {
   atmosphereCatalogue, atmosphereDefaults, atmosphereDescriptions, atmosphereNames,
   atmosphereGroups, atmosphereTargetLabel, type AtmosphereEffect, type AtmosphereKind,
 } from '../camera/atmosphere.ts';
+import { bindNumberSteppers, numberFieldHtml } from './number-stepper.ts';
 
 const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const pct = (value: number) => Math.round(value * 1000) / 10;
@@ -32,10 +33,13 @@ export function createAtmosphereWorkspace(options: {
     if (sceneKey !== options.getSceneKey()) { sceneKey = options.getSceneKey(); preset = ''; editing = ''; }
     if (editing && !(cfg.atmosphere ?? []).some(effect => effect.id === editing)) editing = '';
     for (const section of atmosphereCatalogue) {
-      const host = section.group.startsWith('ATMOSPHERE') ? $('atmosphere-depth-targets') : $('atmosphere-weather-targets');
+      const depthGroup = section.group.startsWith('ATMOSPHERE');
+      const host = depthGroup ? $('atmosphere-depth-targets') : $('atmosphere-weather-targets');
       if (!host) continue;
       host.innerHTML = `<div class="camera-catalogue">${section.kinds.map(kind =>
         `<button type="button" data-atmosphere="${kind}" class="camera-card ${preset === kind ? 'selected' : ''}"><b>${escape(atmosphereNames[kind])}</b><span>${escape(atmosphereDescriptions[kind])}</span></button>`).join('')}</div>`;
+      const badge = $(depthGroup ? 'atmosphere-depth-count' : 'atmosphere-weather-count');
+      if (badge) badge.textContent = String(section.kinds.length);
     }
     document.querySelectorAll<HTMLButtonElement>('[data-atmosphere]').forEach(button => {
       button.onclick = () => { preset = button.dataset.atmosphere as AtmosphereKind; editing = ''; render(); };
@@ -193,6 +197,7 @@ export function createAtmosphereWorkspace(options: {
   function renderInspector(cfg: CameraSceneConfig) {
     const host = $('atmosphere-inspector');
     if (!host) return;
+    bindNumberSteppers(host);
     const duration = sceneDuration(cfg);
     if (!preset) {
       host.innerHTML = '<h3>Atmosphere and visual effects</h3><p class="animation-note">Environmental treatments are evaluated from absolute scene time and rendered by the shared preview. Choose an effect above to add it.</p>';
@@ -206,8 +211,8 @@ export function createAtmosphereWorkspace(options: {
     const base = { id: existing?.id ?? '', kind, start, duration: length, ...defaults, ...existing } as AtmosphereEffect;
     const list = specs(kind, base);
     const timing = `
-      <label class="field">Start · seconds<input id="atmos-start" type="number" min="0" max="${duration}" step="any" required value="${start.toFixed(3)}"></label>
-      <label class="field">Duration · seconds<input id="atmos-duration" type="number" min="0.01" max="${Math.max(.01, duration - start).toFixed(3)}" step="any" required value="${length.toFixed(3)}"></label>
+      ${numberFieldHtml('atmos-start', 'Start · seconds', Number(start.toFixed(3)), 0, duration, 'any', false)}
+      ${numberFieldHtml('atmos-duration', 'Duration · seconds', Number(length.toFixed(3)), .01, Number(Math.max(.01, duration - start).toFixed(3)), 'any', false)}
       <label class="field"><span>Repeats inside the clip</span><input id="atmos-loop" type="checkbox" ${base.loop !== false ? 'checked' : ''}></label>`;
     const target = layerOptional.includes(kind) ? `
       <label class="field">Target<select id="atmos-target-mode">
@@ -300,7 +305,7 @@ export function createAtmosphereWorkspace(options: {
       const value = typeof raw === 'number' ? raw : 0;
       const shown = Math.max(spec.min, Math.min(spec.max, spec.scale ? value * spec.scale : value));
       const rounded = Math.round(shown * 1000) / 1000;
-      return `<label class="field">${escape(spec.label)}<input id="${spec.id}" type="number" min="${spec.min}" max="${spec.max}" step="${spec.step ?? 'any'}" value="${rounded}"></label>`;
+      return numberFieldHtml(spec.id, spec.label, rounded, spec.min, spec.max, spec.step ?? 'any', false);
     }
     if (spec.type === 'check') return `<label class="field"><span>${escape(spec.label)}</span><input id="${spec.id}" type="checkbox" ${raw === true ? 'checked' : ''}></label>`;
     if (spec.type === 'select') {

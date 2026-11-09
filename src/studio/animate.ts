@@ -3,6 +3,7 @@ import { sceneDuration } from '../camera/animation.ts';
 import { moveNames, basicMoves, spatialMoves, advancedMoves, type CameraMove, type CameraMoveType } from '../camera/moves.ts';
 import { renderTimeline, updateTimelineTime } from './timeline.ts';
 import { scenePoint, type Point, type View } from './coordinates.ts';
+import { bindNumberSteppers, numberFieldHtml } from './number-stepper.ts';
 
 // Moves whose X/Y fields are screen or target coordinates, so a picked point can fill them.
 const pickable:(CameraMoveType|'static')[]=['push','pull','zoom','pan','tilt','truck','pedestal','diagonal','crane','tracking','dutch','dollyZoom','orbit'];
@@ -40,15 +41,18 @@ export function createAnimateWorkspace(options: {
       ${basicMoves.map(card).join('')}</div>`;
     $('spatial-moves-targets').innerHTML=`<div class="camera-catalogue">${spatialMoves.map(card).join('')}</div>`;
     $('advanced-moves-targets').innerHTML=`<div class="camera-catalogue">${advancedMoves.map(card).join('')}</div>`;
+    const counts: Record<string, number> = { 'camera-basic-count': basicMoves.length + 1, 'camera-spatial-count': spatialMoves.length, 'camera-advanced-count': advancedMoves.length };
+    for (const [id, count] of Object.entries(counts)) { const badge = $(id); if (badge) badge.textContent = String(count); }
     document.querySelectorAll<HTMLButtonElement>('#camera-basic-moves [data-preset], #camera-spatial-moves [data-preset], #camera-advanced-moves [data-preset]').forEach(b=>b.onclick=()=>{preset=b.dataset.preset as typeof preset;selected='';render();});
     const inspector=$('animation-inspector');
+    bindNumberSteppers(inspector);
     if(preset==='static') {
       inspector.innerHTML='<h3>Static / locked-off</h3><p class="animation-note">Clear camera movement and return to the original framing. Existing layer animations are kept.</p><button id="camera-reset" class="outline">Reset camera movement…</button>';
       $('camera-reset').onclick=()=>{if(!confirm('Clear all camera movement? Layer animations will remain.'))return;const next=structuredClone(cfg);next.tracks=next.tracks.filter(t=>t.target!=='camera');next.animationTracks=(next.animationTracks??[]).filter(t=>t.target!=='camera');next.cameraMoves=[];next.camera.baseZoom=1;next.camera.anchor={x:cfg.width/2,y:cfg.height/2};selected='';void save(next);};
     } else {
       const current=move?.type===preset?move:undefined;
       const legacy=!!current && current.model!==2;
-      const input=(id:string,label:string,value:number,min:number,max:number)=>`<label class="field">${label}<input id="${id}" type="number" required min="${min}" max="${max}" step="any" value="${value}"></label>`;
+      const input=(id:string,label:string,value:number,min:number,max:number)=>numberFieldHtml(id,label,value,min,max);
       inspector.innerHTML=`<h3>${moveNames[preset]}</h3><p class="animation-note">Coordinates are scene pixels, measured from the top left. ${legacy?'This saved movement retains its original camera behaviour.':'Depth affects physical camera moves; reveal moves only the selected layers.'}</p>
         <form id="effect-form">
         ${input('effect-start','Start · seconds',current?.start??0,0,sceneDuration(cfg))}

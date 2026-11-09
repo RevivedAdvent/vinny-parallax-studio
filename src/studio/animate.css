@@ -14,7 +14,7 @@
 #animation-effects-list .parallax-item>div:first-child,#parallax-effects-list .parallax-item>div:first-child{flex:1 1 100%}
 #animation-effects-list .parallax-actions,#parallax-effects-list .parallax-actions{flex:1 1 100%;justify-content:flex-end;margin-top:2px}
 #animation-effects-list .parallax-item.selected{border-color:var(--gold);background:#293024}
-#camera-basic-moves,#camera-spatial-moves,#camera-advanced-moves{margin-top:16px}#camera-basic-moves summary,#camera-spatial-moves summary,#camera-advanced-moves summary{cursor:pointer;list-style:none}#camera-basic-moves summary::-webkit-details-marker,#camera-spatial-moves summary::-webkit-details-marker,#camera-advanced-moves summary::-webkit-details-marker{display:none}#camera-basic-moves summary::after,#camera-spatial-moves summary::after,#camera-advanced-moves summary::after{content:"▸";float:right}#camera-basic-moves[open] summary::after,#camera-spatial-moves[open] summary::after,#camera-advanced-moves[open] summary::after{content:"▾"}#camera-basic-moves[open] summary,#camera-spatial-moves[open] summary,#camera-advanced-moves[open] summary{margin-bottom:10px}
+#camera-basic-moves,#camera-spatial-moves,#camera-advanced-moves{margin-top:10px}
 .camera-catalogue{display:grid;gap:8px}
 .camera-card{text-align:left;border:1px solid #414a3c;border-left:3px solid #8a9a7a;border-radius:5px;padding:10px;background:#161d17}
 .camera-card b{display:block;font-size:13.2px;margin-bottom:5px}.camera-card span{display:block;font-size:12px;color:var(--muted);line-height:1.5}
@@ -43,3 +43,15 @@
 .timeline-empty,.timeline-note,.timeline-legacy-note{font-size:12px;color:var(--muted)}
 button:disabled{opacity:.4;cursor:default}
 @media(max-width:820px){[data-workspace=animate] .preview-column{height:70vh;min-height:400px}[data-workspace=effects] .preview-column{height:95vh;min-height:650px;grid-template-rows:minmax(220px,1fr) auto minmax(220px,45%);padding:10px}.camera-catalogue{grid-template-columns:1fr 1fr}[data-workspace=animate] .side-nav{max-height:400px}#animation-inspector .field{max-width:400px}}
+
+/* Dark native controls and Arrange-style number steppers. */
+#animation-inspector{color-scheme:dark}
+#animation-inspector .number-wrap{width:100px;flex:none}
+#animation-inspector .number-wrap input{width:100%;min-width:0;padding:1px 0;border:0;background:none;text-align:right;appearance:textfield;-moz-appearance:textfield}
+#animation-inspector .number-wrap input::-webkit-inner-spin-button,#animation-inspector .number-wrap input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#animation-inspector .number-wrap input:focus{outline:none}
+#animation-inspector .number-step{color:#9ba496}
+#animation-inspector select{background:#111712;color:#e2e6d8;border:1px solid #3e493b;border-radius:3px;padding:4px 6px}
+#animation-inspector select option{background:#111712;color:#e2e6d8}
+#animation-inspector input[type=checkbox]{accent-color:var(--gold)}
+#animation-inspector,#animation-inspector *{scrollbar-color:#3e493b #0a0f0a}

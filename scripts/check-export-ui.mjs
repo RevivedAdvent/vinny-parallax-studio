@@ -27,6 +27,9 @@ try {
   await page.goto(base + '/');
   await page.waitForFunction(() => window.cameraStudio?.ready, null, { timeout: 60000 });
   await page.locator('[data-tab="export"]').click();
+  assert.equal(await page.locator('#export-quality').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(17, 23, 18)', 'quality select is dark');
+  assert.equal(await page.locator('#export-quality').evaluate(node => getComputedStyle(node).fontSize), '10.8px', 'quality select uses compact type');
+  assert.equal(await page.locator('#export-panel').evaluate(node => getComputedStyle(node).colorScheme), 'dark', 'export controls use dark native rendering');
 
   const cases = [
     { scope: 'current', frames: 1800, seconds: 30 },

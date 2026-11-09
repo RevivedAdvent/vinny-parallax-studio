@@ -30,8 +30,21 @@ try {
   await visibility.click();await page.waitForFunction(id=>window.cameraStudio.getState().visible[id]===true,layerId);
 
   await page.locator('[data-tab="animate"]').click();
+  assert.equal(await page.locator('#camera-basic-count').innerText(), '6', 'basic move count badge is shown');
+  assert.equal(await page.locator('#camera-spatial-count').innerText(), '6', 'spatial move count badge is shown');
+  assert.equal(await page.locator('#camera-advanced-count').innerText(), '7', 'advanced move count badge is shown');
+  assert.equal(await page.locator('#camera-advanced-moves .effect-category-name').evaluate(node => getComputedStyle(node).whiteSpace), 'normal', 'long category names wrap instead of truncating');
+  assert.equal(await page.locator('#camera-advanced-moves .effect-category-name').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'wrapped category name does not overflow');
   await page.locator('#camera-basic-moves summary').click();
   await page.locator('[data-preset="push"]').click();
+  assert.equal(await page.locator('.number-wrap:has(#effect-start) .number-step').count(), 2, 'camera fields use the shared stepper');
+  assert.equal(await page.locator('#animation-inspector').evaluate(node => getComputedStyle(node).colorScheme), 'dark', 'camera native controls are dark');
+  assert.equal(await page.locator('#effect-start').evaluate(node => getComputedStyle(node).appearance), 'textfield', 'native spinners are suppressed');
+  const startBefore = Number(await page.locator('#effect-start').inputValue());
+  await page.locator('.number-wrap:has(#effect-start) [data-step=up]').click();
+  assert.equal(Number(await page.locator('#effect-start').inputValue()), startBefore + 1, 'camera stepper increments');
+  await page.locator('.number-wrap:has(#effect-start) [data-step=down]').click();
+  assert.equal(Number(await page.locator('#effect-start').inputValue()), startBefore, 'camera stepper decrements');
   await page.locator('#effect-duration').fill('3');await page.locator('#camera-travel').fill('20');
   await page.locator('#effect-form button[type="submit"]').click();
   await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===1);
