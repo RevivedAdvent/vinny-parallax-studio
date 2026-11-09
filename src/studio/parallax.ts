@@ -71,6 +71,37 @@ export function createParallaxWorkspace(options: {
   let pickerState: PickerState = createPickerState();
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
+  // Compact number steppers, identical to the Arrange inspector. One delegated
+  // listener survives every inspector re-render.
+  let steppersWired = false;
+  function wireSteppers() {
+    if (steppersWired) return;
+    const host = $('parallax-inspector');
+    if (!host) return;
+    steppersWired = true;
+    host.addEventListener('pointerdown', event => {
+      if ((event.target as HTMLElement).closest('.number-step')) event.preventDefault();
+    });
+    host.addEventListener('click', event => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.number-step');
+      if (!button) return;
+      const input = button.closest('.number-wrap')?.querySelector('input[type=number]');
+      if (!(input instanceof HTMLInputElement)) return;
+      event.preventDefault();
+      const step = Number(input.step);
+      const size = Number.isFinite(step) && step > 0 ? step : 1;
+      const current = Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : (Number(input.min) || 0);
+      const min = input.min === '' ? -Infinity : Number(input.min);
+      const max = input.max === '' ? Infinity : Number(input.max);
+      let next = Number((current + (button.dataset.step === 'down' ? -1 : 1) * size).toPrecision(14));
+      if (Number.isFinite(min)) next = Math.max(min, next);
+      if (Number.isFinite(max)) next = Math.min(max, next);
+      input.value = String(next);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
   async function save(next: CameraSceneConfig) {
     try { await options.commit(next); render(); } catch (e) { options.notify(String(e)); }
   }
@@ -181,8 +212,10 @@ export function createParallaxWorkspace(options: {
 
   // ---- reusable inspector controls ------------------------------------------
 
+  const steppers = (label: string) =>
+    `<span class="number-steppers"><button type="button" class="number-step" data-step="up" aria-label="Increase ${escape(label)}"></button><button type="button" class="number-step" data-step="down" aria-label="Decrease ${escape(label)}"></button></span>`;
   const numberField = (id: string, label: string, value: number, min: number, max: number, step: number | 'any' = 'any', hint = '') =>
-    `<label class="field"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><input id="${id}" type="number" required min="${min}" max="${max}" step="${step}" value="${round(value)}"></label>`;
+    `<label class="field"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="number-wrap"><input id="${id}" type="number" required min="${min}" max="${max}" step="${step}" value="${round(value)}">${steppers(label)}</span></label>`;
 
   const segmented = (name: string, label: string, choices: { value: string; label: string; title?: string }[], current: string) =>
     `<div class="parallax-segment-field"><span class="parallax-segment-label">${label}</span><div class="segmented" role="radiogroup" aria-label="${label}">${choices.map(choice =>
@@ -254,6 +287,7 @@ export function createParallaxWorkspace(options: {
   let activePicker: { selected: () => string[] } | null = null;
 
   function renderInspector(cfg: CameraSceneConfig) {
+    wireSteppers();
     const inspector = $('parallax-inspector');
     activePicker = null;
     if (!preset) {
@@ -269,7 +303,7 @@ export function createParallaxWorkspace(options: {
       inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Parallax scales each layer's camera translation inside the projection, never a screen offset. 100% is neutral; 0% pins a layer to the camera. Depth 0 is background, 1 is foreground.</p>
         <label class="field">Parallax strength · %<input id="parallax-strength" type="range" min="0" max="300" step="1" value="${pct(cfg.parallax?.strength ?? 1)}"><output id="parallax-strength-out">${pct(cfg.parallax?.strength ?? 1)}%</output></label>
         <fieldset class="parallax-layers"><legend>Layer depth and influence</legend>${cfg.layers.map(layer =>
-          `<div class="depth-layer"><div class="depth-layer-head"><span class="depth-name" title="${escape(layer.name)}">${escape(layer.name)}</span><label class="depth-influence">Influence %<input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}"></label></div><div class="depth-row"><span class="depth-label">Depth</span><input id="depth-${layer.id}" type="range" min="0" max="100" step="1" value="${pct(layer.depth)}"><output id="depth-out-${layer.id}">${pct(layer.depth)}%</output></div></div>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
+          `<div class="depth-layer"><div class="depth-layer-head"><span class="depth-name" title="${escape(layer.name)}">${escape(layer.name)}</span><label class="depth-influence">Influence %<span class="number-wrap"><input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}">${steppers('influence')}</span></label></div><div class="depth-row"><span class="depth-label">Depth</span><input id="depth-${layer.id}" type="range" min="0" max="100" step="1" value="${pct(layer.depth)}"><output id="depth-out-${layer.id}">${pct(layer.depth)}%</output></div></div>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
         <div class="row-actions"><button class="outline" type="button" id="parallax-depth-save">Apply depth settings</button><button type="button" id="parallax-depth-reset">Reset to neutral</button></div>`;
       const strength = $<HTMLInputElement>('parallax-strength');
       strength.oninput = () => { $('parallax-strength-out').textContent = `${strength.value}%`; };
@@ -341,7 +375,7 @@ export function createParallaxWorkspace(options: {
         ${basicSection(
           `<div class="parallax-plane-list">${planes.map((plane, index) => `<div class="parallax-plane" data-plane="${escape(plane.id)}">
             <div class="parallax-plane-head"><input id="plane-name-${index}" class="parallax-plane-name" type="text" maxlength="60" value="${escape(plane.name)}" aria-label="Plane name"><button type="button" class="parallax-plane-delete" data-plane-delete="${escape(plane.id)}" title="Delete plane" aria-label="Delete plane">✕</button></div>
-            <label class="field"><span>Depth · %</span><input id="plane-depth-${index}" type="number" min="0" max="100" step="1" value="${pct(plane.depth)}"></label>
+            ${numberField(`plane-depth-${index}`, 'Depth · %', pct(plane.depth), 0, 100, 1)}
           </div>`).join('') || '<p class="parallax-empty">No depth planes yet. Add one, then assign layers.</p>'}</div>
           <div class="row-actions"><button type="button" id="plane-add">＋ Add plane</button></div>
           <div class="parallax-settings-subtitle">Layer assignments</div>
@@ -349,7 +383,7 @@ export function createParallaxWorkspace(options: {
           <div class="row-actions"><button class="outline" type="button" id="plane-save">Apply planes</button></div>`
         )}
         ${advancedSection(
-          planes.map((plane, index) => `<label class="field"><span>${escape(plane.name)} · exact depth</span><input id="plane-depth-exact-${index}" type="number" min="0" max="1" step="0.001" value="${round(plane.depth)}"></label>`).join('')
+          planes.map((plane, index) => numberField(`plane-depth-exact-${index}`, `${escape(plane.name)} · exact depth`, plane.depth, 0, 1, .001)).join('')
           + '<p class="animation-note">A plane overrides the stored depth for camera evaluation only. Draw order never changes, and unassigned layers keep their own depth. Deleting a plane returns its layers to their stored depth.</p>'
         )}`;
       // Keep the percentage and exact depth fields in step without hiding either one.

@@ -206,8 +206,22 @@ try {
   await choose('transform');
   assert.equal(await ui.locator('.parallax-advanced').count(), 0, 'transform has no empty advanced section');
 
-  // Numeric validation rejects out-of-range values without adding an effect.
+  // Native controls in the Parallax inspector use the dark palette.
   await choose('drift');
+  const scheme = await ui.locator('#parallax-inspector').evaluate(node => getComputedStyle(node).colorScheme);
+  assert.equal(scheme, 'dark', 'native controls use the dark palette');
+  const selectStyle = await ui.locator('#drift-motion').evaluate(node => { const style = getComputedStyle(node); return { background: style.backgroundColor, color: style.color }; });
+  assert.notEqual(selectStyle.background, 'rgb(255, 255, 255)', 'selects are not white');
+  assert.notEqual(selectStyle.background, 'rgba(0, 0, 0, 0)', 'selects have an explicit dark background');
+  // Number fields reuse the Arrange stepper control instead of native spinners.
+  assert.equal(await ui.locator('.number-wrap:has(#drift-amplitude) .number-step').count(), 2, 'two stepper arrows per number field');
+  assert.equal(await ui.locator('#drift-amplitude').evaluate(node => getComputedStyle(node).appearance), 'textfield', 'native spinners are suppressed');
+  await ui.locator('.number-wrap:has(#drift-amplitude) [data-step=up]').click();
+  assert.equal(await ui.locator('#drift-amplitude').inputValue(), '13', 'stepper increments by the field step');
+  await ui.locator('.number-wrap:has(#drift-amplitude) [data-step=down]').click();
+  assert.equal(await ui.locator('#drift-amplitude').inputValue(), '12', 'stepper decrements by the field step');
+
+  // Numeric validation rejects out-of-range values without adding an effect.
   await ui.locator('#drift-amplitude').fill('401');
   await ui.locator('#parallax-form button[type=submit]').click();
   await ui.waitForTimeout(150);
@@ -271,7 +285,8 @@ try {
   assert.equal(await ui.locator('input[name=parallax-layer][type=radio]').count(), 2, 'single target uses radios');
   assert.equal(await ui.locator('[data-folder-check]').count(), 0, 'folder rows cannot be the single target');
   assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 1, 'exactly one single target');
-
+  assert.equal(await ui.locator('[data-picker-all]').count(), 0, 'single target has no Select all');
+  assert.equal(await ui.locator('[data-picker-clear]').count(), 0, 'single target has no Clear');
   // Arrange multi-selection prepopulates new multi-target effects.
   await ui.locator('[data-tab="arrange"]').click();
   const arrangeRows = ui.locator('#layer-list .layer-row[data-drag^="layer:"]');
@@ -297,6 +312,7 @@ try {
   assert.equal(await ui.locator('[id^=influence-]').first().getAttribute('max'), '300');
   assert.equal(await ui.locator('[id^=depth-]').first().getAttribute('min'), '0');
   assert.equal(await ui.locator('[id^=depth-]').first().getAttribute('max'), '100');
+  assert.equal(await ui.locator('.number-wrap:has([id^=influence-]) .number-step').count(), 4, 'each depth influence row uses the same stepper control');
   assert.match(await ui.locator('#parallax-inspector').innerText(), /Layer depth and influence/);
   await ui.locator('#parallax-strength').fill('150');
   await ui.locator('#parallax-depth-save').click();

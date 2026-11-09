@@ -1,5 +1,5 @@
 [data-workspace=parallax] .parallax-pane{display:block}
-#parallax-inspector{display:none}
+#parallax-inspector{display:none;color-scheme:dark}
 [data-workspace=parallax] #parallax-inspector{display:block}
 [data-workspace=parallax] #properties{display:none}
 [data-workspace=parallax] .preview-column{display:grid;grid-template-rows:minmax(180px,1fr) auto;align-items:stretch;padding:12px 24px 0;overflow:hidden}
@@ -27,7 +27,18 @@
 .parallax-corner b{font-size:11.5px;color:var(--muted);align-self:center}
 .parallax-corner .field{margin:0}
 .parallax-corner input{width:78px}
-#parallax-inspector select{width:100%;max-width:220px}
+#parallax-inspector select{width:100%;max-width:220px;background:#111712;color:#e2e6d8;border:1px solid #3e493b;border-radius:3px;padding:4px 6px}
+#parallax-inspector .number-wrap{width:110px;flex:none}
+#parallax-inspector .number-wrap input{width:100%;min-width:0;padding:1px 0;border:0;background:none;text-align:right;appearance:textfield;-moz-appearance:textfield}
+#parallax-inspector .number-wrap input::-webkit-inner-spin-button,#parallax-inspector .number-wrap input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#parallax-inspector .number-wrap input:focus{outline:none}
+#parallax-inspector .depth-influence .number-wrap{width:72px;min-height:20px;padding:1px 3px 1px 4px}
+#parallax-inspector .parallax-plane .number-wrap{width:86px}
+#parallax-inspector .number-step{color:#9ba496}
+#parallax-inspector select option{background:#111712;color:#e2e6d8}
+#parallax-inspector,#parallax-inspector *{scrollbar-color:#3e493b #0a0f0a}
+#parallax-inspector input[type=color]{background:transparent;border:1px solid #3e493b;border-radius:3px;padding:1px}
+#parallax-inspector input[type=search]::-webkit-search-cancel-button{filter:invert(.7)}
 #parallax-inspector button[data-plane-delete]{justify-self:start;margin-top:4px}
 
 /* Per-layer depth editor inside the Parallax tab. */

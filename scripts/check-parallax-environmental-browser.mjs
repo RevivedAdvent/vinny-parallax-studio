@@ -293,6 +293,9 @@ try {
   assert.equal(await ui.locator('#plane-depth-exact-0').isVisible(), false, 'exact depths are advanced settings');
   await ui.locator('#plane-name-0').fill('Midground');
   await ui.locator('#plane-depth-0').fill('65');
+  await ui.locator('.number-wrap:has(#plane-depth-0) [data-step=up]').click();
+  assert.equal(await ui.locator('#plane-depth-0').inputValue(), '66', 'plane depth uses the shared stepper');
+  await ui.locator('.number-wrap:has(#plane-depth-0) [data-step=down]').click();
   await ui.locator('#plane-name-1').fill('Foreground');
   assert.equal(await ui.locator('[data-folder-plane]').count(), 1, 'folders get a bulk assignment control');
   await ui.locator('[data-folder-plane]').selectOption({ index: 1 });

@@ -141,10 +141,10 @@ export function mountTargetPicker(host: HTMLElement, options: {
       <span class="search-glyph" aria-hidden="true">⌕</span>
       <input type="search" data-picker-search value="${escapeHtml(state.search)}" placeholder="Search layers and folders" aria-label="Search target layers and folders">
     </label>
-    <div class="parallax-picker-tools">
+    ${mode === 'multi' ? `<div class="parallax-picker-tools">
       <button type="button" data-picker-all>Select all</button>
       <button type="button" data-picker-clear>Clear</button>
-    </div>
+    </div>` : ''}
     <div class="parallax-picker-tree" data-picker-tree role="group" aria-label="Target layers"></div>
     <p class="parallax-picker-summary" data-picker-summary></p>`;
 
@@ -220,13 +220,11 @@ export function mountTargetPicker(host: HTMLElement, options: {
 
   searchField.oninput = () => { state.search = searchField.value; renderTree(); };
 
-  host.querySelector<HTMLButtonElement>('[data-picker-all]')!.onclick = () => {
-    const ids = visibleLayerIds(currentRows());
-    if (mode === 'multi') ids.forEach(id => selected.add(id));
-    else if (ids.length) { selected.clear(); selected.add(ids[0]!); }
+  host.querySelector<HTMLButtonElement>('[data-picker-all]')?.addEventListener('click', () => {
+    visibleLayerIds(currentRows()).forEach(id => selected.add(id));
     renderTree();
-  };
-  host.querySelector<HTMLButtonElement>('[data-picker-clear]')!.onclick = () => { selected.clear(); renderTree(); };
+  });
+  host.querySelector<HTMLButtonElement>('[data-picker-clear]')?.addEventListener('click', () => { selected.clear(); renderTree(); });
 
   renderTree();
 
