@@ -6,8 +6,10 @@
 [data-workspace=atmosphere] .viewer{height:100%;width:100%;min-height:0;max-height:none;aspect-ratio:auto;display:flex;align-items:center;justify-content:center}
 [data-workspace=atmosphere] #canvas-host{width:100%;height:100%;display:flex;align-items:center;justify-content:center;aspect-ratio:auto;min-width:0;min-height:0}
 [data-workspace=atmosphere] #canvas-host canvas{display:block;max-width:100%;max-height:100%;object-fit:contain}
+/* Category names wrap to a second line instead of truncating the long ones
+   ("Weather & Environment") in the narrow catalogue column. */
+#atmosphere-categories .parallax-category-name{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word;line-height:1.35}
 .atmosphere-pane .panel-heading{margin-top:14px}
-#atmosphere-depth-effects,#atmosphere-weather-effects{margin-top:10px}
 #atmosphere-effects-list .parallax-item{flex-wrap:wrap;margin-bottom:6px}
 #atmosphere-effects-list .parallax-item>div:first-child{flex:1 1 100%}
 #atmosphere-effects-list .parallax-actions{flex:1 1 100%;justify-content:flex-end;margin-top:2px}
@@ -36,3 +38,11 @@
 #atmosphere-inspector input[type=checkbox]{accent-color:var(--gold)}
 #atmosphere-inspector input[type=color]{background:transparent;border:1px solid #3e493b;border-radius:3px;padding:1px}
 #atmosphere-inspector,#atmosphere-inspector *{scrollbar-color:#3e493b #0a0f0a}
+
+/* ---- Basic and Advanced settings -------------------------------------------
+   The four-category catalogue and the Basic/Advanced section styling are
+   shared with Parallax (.parallax-category, .parallax-settings,
+   .parallax-advanced in parallax.css). Only the inspector-local pieces that
+   Parallax scopes to its own host are repeated here. */
+#atmosphere-inspector .field-label{display:flex;flex-direction:column;gap:1px;min-width:0}
+#atmosphere-inspector .field-label small{color:#7f8c76;font-size:9.6px;font-weight:400;line-height:1.3}

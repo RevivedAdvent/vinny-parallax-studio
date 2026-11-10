@@ -16,20 +16,20 @@ export type AtmosphereGroup = 'Atmosphere' | 'Particles' | 'Weather' | 'Lighting
 export type AtmosphereTarget = 'scene' | 'layers';
 
 export const atmosphereNames: Record<AtmosphereKind, string> = {
-  fog: 'Ground fog and drifting mist',
-  haze: 'Distant atmospheric haze',
-  rays: 'Volumetric-style light rays',
-  dust: 'Dust, pollen and spores',
-  depthBlur: 'Depth-based blur',
-  light: 'Gentle light variation',
-  defocus: 'Foreground defocus',
-  leaves: 'Leaves / petals drifting',
-  foliage: 'Foliage in wind',
-  clouds: 'Clouds and sunlight',
-  rain: 'Rain / droplets',
-  snow: 'Snow or ash',
-  fireflies: 'Fireflies and insects',
-  waterfall: 'Waterfall mist / ripples',
+  fog: 'Ground Fog',
+  haze: 'Atmospheric Haze',
+  rays: 'Light Rays',
+  dust: 'Floating Dust',
+  depthBlur: 'Depth Blur',
+  light: 'Ambient Light',
+  defocus: 'Foreground Defocus',
+  leaves: 'Leaves / Petals',
+  foliage: 'Wind / Foliage Motion',
+  clouds: 'Clouds & Sunlight',
+  rain: 'Rain',
+  snow: 'Snow / Ash',
+  fireflies: 'Fireflies',
+  waterfall: 'Waterfall Mist / Ripples',
 };
 
 export const atmosphereGroups: Record<AtmosphereKind, AtmosphereGroup> = {
@@ -41,26 +41,36 @@ export const atmosphereGroups: Record<AtmosphereKind, AtmosphereGroup> = {
 
 export const atmosphereGroupOrder: AtmosphereGroup[] = ['Atmosphere', 'Particles', 'Weather', 'Lighting'];
 
+/** Presentation-only labels; the stored group values and effect data are unchanged. */
+export const atmosphereGroupNames: Record<AtmosphereGroup, string> = {
+  Atmosphere: 'Atmosphere & Depth',
+  Lighting: 'Lighting',
+  Particles: 'Particles',
+  Weather: 'Weather & Environment',
+};
+
 export const atmosphereCatalogue: { group: string; kinds: AtmosphereKind[] }[] = [
-  { group: 'ATMOSPHERE AND DEPTH', kinds: ['fog', 'haze', 'rays', 'dust', 'depthBlur', 'light', 'defocus'] },
-  { group: 'NATURE AND WEATHER', kinds: ['leaves', 'foliage', 'clouds', 'rain', 'snow', 'fireflies', 'waterfall'] },
+  { group: 'ATMOSPHERE & DEPTH', kinds: ['fog', 'haze', 'depthBlur', 'defocus'] },
+  { group: 'LIGHTING', kinds: ['rays', 'light'] },
+  { group: 'PARTICLES', kinds: ['dust', 'leaves', 'fireflies'] },
+  { group: 'WEATHER & ENVIRONMENT', kinds: ['foliage', 'clouds', 'rain', 'snow', 'waterfall'] },
 ];
 
 export const atmosphereDescriptions: Record<AtmosphereKind, string> = {
-  fog: 'Low-lying translucent bands that drift slowly through the scene.',
-  haze: 'Softens remote planes and strengthens the sense of atmospheric depth.',
-  rays: 'Stylized shafts of light breaking through foliage or mist.',
-  dust: 'Sparse particles suspended at several depths.',
-  depthBlur: 'Separates foreground, subject and background with a focus plane.',
-  light: 'Slowly varies environmental illumination without flicker.',
-  defocus: 'Slightly softens close foreground objects around the subject.',
-  leaves: 'Sparse petals or leaves with depth-dependent speed and rotation.',
-  foliage: 'Small, offset sways driven by wind and slow gusts.',
-  clouds: 'Slow cloud movement with restrained sunlight dimming.',
-  rain: 'Layered streaks with an optional foreground droplet pass.',
-  snow: 'Falling or floating particles with snow and ash characters.',
-  fireflies: 'Sparse glowing points with smooth, independent pulses.',
-  waterfall: 'Rising mist and local ripple rings around water.',
+  fog: 'Low-lying translucent bands that drift slowly across the scene, adding a misty, grounded atmosphere.',
+  haze: 'Softens distant layers and adds a sense of aerial perspective and atmospheric depth.',
+  rays: 'Stylized shafts of light that break through foliage or mist, adding warmth and drama.',
+  dust: 'Sparse floating particles suspended at several depths, catching the light gently.',
+  depthBlur: 'Separates foreground, subject and background with a controllable focus plane.',
+  light: 'Slowly varies the environmental illumination, creating gentle brightness changes without flicker.',
+  defocus: 'Slightly softens close foreground objects, drawing attention to the subject.',
+  leaves: 'Sparse petals or leaves drifting with depth-dependent speed and natural rotation.',
+  foliage: 'Gentle wind-driven sways for foliage, branches and similar organic elements.',
+  clouds: 'Slow cloud movement with subtle opacity changes and restrained sunlight dimming.',
+  rain: 'Layered rain streaks with depth variation and an optional foreground droplet pass.',
+  snow: 'Falling or floating particles with selectable snow and ash characters.',
+  fireflies: 'Sparse glowing points with smooth, independent pulses drifting gently through the scene.',
+  waterfall: 'Rising mist puffs and concentric ripple rings positioned around water features.',
 };
 
 export interface AtmosphereEffect {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createScene } from '../src/studio/project.ts';
 import { validateScene } from '../src/camera/validate.ts';
 import {
-  atmosphereDescriptions, atmosphereGroups, atmosphereNames, atmosphereWindow,
+  atmosphereCatalogue, atmosphereDescriptions, atmosphereGroups, atmosphereNames, atmosphereWindow,
   evaluateAtmosphere,
 } from '../src/camera/atmosphere.ts';
 
@@ -31,6 +31,29 @@ test('the catalogue exposes all fourteen effects with grouping and descriptions'
     assert.ok(atmosphereDescriptions[kind].length > 20);
     assert.ok(['Atmosphere', 'Particles', 'Weather', 'Lighting'].includes(atmosphereGroups[kind]));
   }
+});
+
+test('the four catalogue categories keep every effect exactly once and in the approved order', () => {
+  assert.deepEqual(atmosphereCatalogue.map(section => section.group),
+    ['ATMOSPHERE & DEPTH', 'LIGHTING', 'PARTICLES', 'WEATHER & ENVIRONMENT']);
+  assert.deepEqual(atmosphereCatalogue.map(section => section.kinds), [
+    ['fog', 'haze', 'depthBlur', 'defocus'],
+    ['rays', 'light'],
+    ['dust', 'leaves', 'fireflies'],
+    ['foliage', 'clouds', 'rain', 'snow', 'waterfall'],
+  ]);
+  assert.deepEqual(atmosphereCatalogue.flatMap(section => section.kinds).sort(), [...kinds].sort());
+});
+
+test('display names use the new catalogue language while kind ids stay unchanged', () => {
+  const expected = {
+    fog: 'Ground Fog', haze: 'Atmospheric Haze', rays: 'Light Rays', dust: 'Floating Dust',
+    depthBlur: 'Depth Blur', light: 'Ambient Light', defocus: 'Foreground Defocus',
+    leaves: 'Leaves / Petals', foliage: 'Wind / Foliage Motion', clouds: 'Clouds & Sunlight',
+    rain: 'Rain', snow: 'Snow / Ash', fireflies: 'Fireflies', waterfall: 'Waterfall Mist / Ripples',
+  };
+  assert.deepEqual(atmosphereNames, expected);
+  assert.deepEqual(Object.keys(atmosphereNames).sort(), [...kinds].sort());
 });
 
 test('every effect validates and evaluates deterministically without mutating the scene', () => {

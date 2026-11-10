@@ -90,11 +90,14 @@ try {
   await studio.locator('[data-tab="atmosphere"]').click();
   await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   assert.equal(await studio.locator('.atmosphere-pane').isVisible(), true);
-  assert.equal(await studio.locator('#atmosphere-depth-count').innerText(), '7', 'depth count badge is shown');
-  assert.equal(await studio.locator('#atmosphere-weather-count').innerText(), '7', 'weather count badge is shown');
-  await studio.locator('#atmosphere-depth-effects summary').click();
-  await studio.locator('#atmosphere-weather-effects summary').click();
+  assert.equal(await studio.locator('.atmosphere-category').count(), 4, 'four catalogue categories are shown');
+  assert.deepEqual(await studio.locator('.atmosphere-category .parallax-category-name').allInnerTexts(),
+    ['ATMOSPHERE & DEPTH', 'LIGHTING', 'PARTICLES', 'WEATHER & ENVIRONMENT'], 'categories appear in the approved order');
+  assert.deepEqual(await studio.locator('.atmosphere-category .parallax-category-count').allInnerTexts(),
+    ['4', '2', '3', '5'], 'each category shows its effect count');
+  await studio.evaluate(() => document.querySelectorAll('.atmosphere-category').forEach(details => { details.open = true; }));
   assert.equal(await studio.locator('[data-atmosphere]').count(), 14, 'all fourteen effects are offered');
+  assert.equal(await studio.locator('[data-atmosphere="fog"] b').innerText(), 'Ground Fog', 'catalogue uses the new display names');
   assert.equal(await studio.locator('#atmosphere-inspector').isVisible(), true);
 
   // Import real artwork, then author every catalogue card once through the UI.
@@ -104,13 +107,57 @@ try {
   await studio.locator('[data-tab="atmosphere"]').click();
   await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
   const names = {
-    fog: 'Ground fog and drifting mist', haze: 'Distant atmospheric haze', rays: 'Volumetric-style light rays',
-    dust: 'Dust, pollen and spores', depthBlur: 'Depth-based blur', light: 'Gentle light variation', defocus: 'Foreground defocus',
-    leaves: 'Leaves / petals drifting', foliage: 'Foliage in wind', clouds: 'Clouds and sunlight', rain: 'Rain / droplets',
-    snow: 'Snow or ash', fireflies: 'Fireflies and insects', waterfall: 'Waterfall mist / ripples',
+    fog: 'Ground Fog', haze: 'Atmospheric Haze', rays: 'Light Rays',
+    dust: 'Floating Dust', depthBlur: 'Depth Blur', light: 'Ambient Light', defocus: 'Foreground Defocus',
+    leaves: 'Leaves / Petals', foliage: 'Wind / Foliage Motion', clouds: 'Clouds & Sunlight', rain: 'Rain',
+    snow: 'Snow / Ash', fireflies: 'Fireflies', waterfall: 'Waterfall Mist / Ripples',
+  };
+  // Approved Basic / Advanced split; ids are `atmos-<field key>`.
+  const basicFields = {
+    fog: ['level', 'density', 'opacity', 'speed', 'color'],
+    haze: ['intensity', 'depthLimit', 'color'],
+    rays: ['angle', 'opacity', 'color'],
+    depthBlur: ['focus', 'range', 'strength'],
+    defocus: ['strength', 'depthThreshold'],
+    light: ['brightness', 'amount', 'color'],
+    dust: ['count', 'sizeMin', 'sizeMax', 'opacityMin', 'opacityMax', 'speed', 'color'],
+    leaves: ['count', 'sizeMin', 'sizeMax', 'opacityMin', 'opacityMax', 'speed', 'rotationSpeed', 'color'],
+    fireflies: ['count', 'size', 'glow', 'opacity', 'speed', 'color'],
+    rain: ['count', 'speed', 'opacity', 'droplets', 'color'],
+    snow: ['mode', 'count', 'sizeMin', 'sizeMax', 'speed', 'color'],
+    foliage: ['direction', 'strength', 'speed', 'gust'],
+    clouds: ['driftX', 'driftY', 'period', 'sunDim'],
+    waterfall: ['mistSpeed', 'mistOpacity', 'rippleOpacity', 'color'],
+  };
+  const advancedFields = {
+    fog: ['bands', 'coverage', 'softness', 'driftX', 'driftY', 'period'],
+    haze: ['feather', 'desaturate', 'brightness'],
+    rays: ['originX', 'originY', 'count', 'width', 'rayLength', 'spread', 'vary', 'speed'],
+    depthBlur: ['falloff', 'animate', 'focusEnd'],
+    defocus: ['softness', 'animate', 'amount'],
+    light: ['speed', 'irregular', 'period'],
+    dust: ['direction', 'lifetime', 'depthSpread', 'drift', 'regionX', 'regionY', 'regionWidth', 'regionHeight', 'seed'],
+    leaves: ['direction', 'lifetime', 'drift', 'depthSpread', 'regionX', 'regionY', 'regionWidth', 'regionHeight', 'texture-layer', 'seed'],
+    fireflies: ['lifetime', 'pulse', 'depthSpread'],
+    rain: ['angle', 'streakLength', 'streakWidth', 'depthSpread', 'regionX', 'regionY', 'regionWidth', 'regionHeight', 'seed'],
+    snow: ['opacityMin', 'opacityMax', 'oscillation', 'rotationSpeed', 'lifetime', 'depthSpread', 'regionX', 'regionY', 'regionWidth', 'regionHeight', 'seed'],
+    foliage: ['phase', 'spread', 'movement', 'pivotX', 'pivotY'],
+    clouds: ['opacityVariation', 'scaleVariation', 'tileable', 'sunPeriod'],
+    waterfall: ['mistCount', 'mistSize', 'mistSoftness', 'softness', 'rippleCount', 'rippleRadius', 'rippleSpeed', 'rippleSpacing', 'regionX', 'regionY', 'regionWidth', 'regionHeight'],
   };
   for (const kind of kinds) {
     await studio.locator(`[data-atmosphere="${kind}"]`).click();
+    assert.equal(await studio.locator('#atmosphere-inspector h3').innerText(), names[kind], `${kind} shows its display name`);
+    assert.equal(await studio.locator('#atmosphere-inspector .parallax-settings').first().isVisible(), true, `${kind} shows Basic settings immediately`);
+    assert.equal(await studio.locator('#atmosphere-inspector .parallax-advanced').count(), 1, `${kind} has an Advanced settings section`);
+    assert.equal(await studio.locator('#atmosphere-inspector .parallax-advanced[open]').count(), 0, `${kind} keeps Advanced settings collapsed by default`);
+    for (const key of basicFields[kind]) {
+      assert.equal(await studio.locator(`#atmosphere-inspector .parallax-settings #atmos-${key}`).count(), 1, `${kind} shows ${key} in Basic settings`);
+      assert.equal(await studio.locator(`#atmosphere-inspector .parallax-advanced-body #atmos-${key}`).count(), 0, `${kind} does not duplicate ${key} in Advanced`);
+    }
+    for (const key of advancedFields[kind]) {
+      assert.equal(await studio.locator(`#atmosphere-inspector .parallax-advanced-body #atmos-${key}`).count(), 1, `${kind} keeps ${key} in Advanced settings`);
+    }
     if (kind === 'fog') {
       assert.equal(await studio.locator('.number-wrap:has(#atmos-density) .number-step').count(), 2, 'atmosphere fields use the shared stepper');
       assert.equal(await studio.locator('#atmosphere-inspector').evaluate(node => getComputedStyle(node).colorScheme), 'dark', 'atmosphere native controls are dark');
@@ -146,18 +193,37 @@ try {
     await studio.waitForFunction(() => (window.cameraStudio.getState().config.atmosphere ?? []).length === 0);
   }
 
+  // Advanced values survive editing even when the user never opens Advanced settings.
+  await studio.locator('[data-atmosphere="fog"]').click();
+  await studio.locator('#atmosphere-inspector .parallax-advanced summary').click();
+  await studio.locator('#atmos-bands').fill('3');
+  await studio.locator('#atmosphere-form button[type=submit]').click();
+  await studio.waitForFunction(() => window.cameraStudio.getState().config.atmosphere?.length === 1);
+  let advancedFog = await studio.evaluate(() => window.cameraStudio.getState().config.atmosphere[0]);
+  assert.equal(advancedFog.bands, 3, 'advanced values are saved');
+  await studio.locator('[data-atmos-edit]').first().click();
+  assert.equal(await studio.locator('#atmosphere-inspector .parallax-advanced[open]').count(), 0, 'advanced is collapsed when reopening an effect');
+  assert.equal(Number(await studio.locator('#atmos-bands').inputValue()), 3, 'the saved advanced value is restored');
+  await studio.locator('#atmos-duration').fill('2.5');
+  await studio.locator('#atmosphere-form button[type=submit]').click();
+  await studio.waitForFunction(() => window.cameraStudio.getState().config.atmosphere?.[0]?.duration === 2.5);
+  advancedFog = await studio.evaluate(() => window.cameraStudio.getState().config.atmosphere[0]);
+  assert.equal(advancedFog.bands, 3, 'updating without opening Advanced settings preserves the value');
+  await studio.locator('[data-atmos-delete]').first().click();
+  await studio.waitForFunction(() => (window.cameraStudio.getState().config.atmosphere ?? []).length === 0);
+
   await studio.locator('[data-atmosphere="fog"]').click();
   await studio.locator('#atmos-start').fill('0');
   await studio.locator('#atmos-duration').fill('2');
   await studio.locator('#atmosphere-form button[type=submit]').click();
   await studio.waitForFunction(() => window.cameraStudio.getState().config.atmosphere?.length === 1);
-  assert.match(await studio.locator('#atmosphere-effects-list').innerText(), /Ground fog and drifting mist/);
+  assert.match(await studio.locator('#atmosphere-effects-list').innerText(), /Ground Fog/);
   let current = await studio.evaluate(() => window.cameraStudio.getState().config.atmosphere[0]);
   assert.equal(current.kind, 'fog'); assert.equal(current.duration, 2); assert.ok(current.density > 0);
 
   await studio.locator('[data-tab="effects"]').click();
   assert.equal(await studio.locator('.timeline-row[data-atmos]').count(), 1, 'atmosphere appears in the main timeline');
-  assert.equal(await studio.locator('.timeline-group-label').first().innerText(), 'ATMOSPHERE');
+  assert.equal(await studio.locator('.timeline-group-label').first().innerText(), 'ATMOSPHERE & DEPTH');
   const row = studio.locator('.timeline-row[data-atmos]').first();
   const lane = await row.locator('.timeline-lane').boundingBox(), bar = await row.locator('.timeline-bar').boundingBox();
   assert.ok(Math.abs(bar.width / lane.width - 2 / 30) < .01, 'clip width represents duration');
@@ -171,8 +237,8 @@ try {
 
   await row.getByRole('button', { name: 'Edit' }).click();
   await studio.waitForFunction(() => document.querySelector('#app').dataset.workspace === 'atmosphere');
-  assert.match(await studio.locator('#atmosphere-inspector h3').innerText(), /Ground fog/);
-  assert.match(await studio.locator('#atmosphere-effects-list .parallax-item.selected').innerText(), /Ground fog/);
+  assert.match(await studio.locator('#atmosphere-inspector h3').innerText(), /Ground Fog/);
+  assert.match(await studio.locator('#atmosphere-effects-list .parallax-item.selected').innerText(), /Ground Fog/);
 
   await studio.locator('#atmosphere-add-another').click();
   await studio.locator('[data-atmosphere="dust"]').click();
@@ -186,7 +252,7 @@ try {
   await studio.waitForFunction(() => window.cameraStudio?.ready);
   await studio.locator('[data-tab="atmosphere"]').click();
   await studio.evaluate(()=>{const d=document.getElementById('applied-atmosphere');if(d)d.open=true;});
-  await studio.waitForFunction(() => /No atmosphere effects yet|Dust, pollen and spores/.test(document.querySelector('#atmosphere-effects-list').innerText));
+  await studio.waitForFunction(() => /No atmosphere effects yet|Floating Dust/.test(document.querySelector('#atmosphere-effects-list').innerText));
   const saved = await studio.evaluate(() => window.cameraStudio.getState().config.atmosphere ?? []);
   assert.equal(saved.length, 2, 'atmosphere survives save and reload');
   assert.deepEqual(saved.map(e => e.kind).sort(), ['dust', 'fog']);
