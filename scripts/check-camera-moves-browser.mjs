@@ -63,7 +63,7 @@ try {
  assert.equal((await state()).config.totalFrames,1800,'cannot shorten past movement endpoint');
  await page.locator('[data-tab="animate"]').click();await page.locator('#camera-basic-moves summary').click();await page.locator('[data-preset="static"]').click();await page.locator('#camera-reset').click();
  await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves?.length===0);
- await page.evaluate(()=>window.cameraStudio.renderTime(5));result=await state();assert.deepEqual(result.state.compositeCamera,{x:0,y:0,scale:1});assert.equal(result.config.layers.length,2);
+ await page.evaluate(()=>window.cameraStudio.renderTime(5));result=await state();assert.deepEqual(result.state.cameraTracks,{x:0,y:0,uniform:0,roll:0,dolly:0});assert.deepEqual(Object.fromEntries(['x','y','z','yaw','pitch','roll'].map(k=>[k,result.state.virtualCamera[k]])),{x:0,y:0,z:0,yaw:0,pitch:0,roll:0});assert.equal(result.state.virtualCamera.focalLength,Math.max(result.config.width,result.config.height)*2);assert.equal(result.config.layers.length,2);
  // Imported legacy camera and layer tracks survive until the user explicitly replaces camera tracks.
  const legacy=structuredClone(result.config);legacy.id='legacy-scene';legacy.cameraMoves=undefined;
  legacy.tracks=[{id:'legacy-camera',target:'camera',property:'x',startFrame:0,endFrame:24,startValue:0,endValue:10,easing:'ease_in',intensity:1,limits:{min:-100,max:100}}];
@@ -105,19 +105,20 @@ try {
  await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();
  if(result.config.id!=='legacy-scene'){await page.locator('#project-list').getByRole('button',{name:'Legacy (imported)',exact:true}).click();await page.waitForFunction(()=>{try{return window.cameraStudio.getState().config.id==='legacy-scene';}catch{return false;}});result=await state();}
  assert.equal(result.config.cameraMoves.length,6);assert.equal(result.config.cameraMoves.find(m=>m.type==='crane').lookX,800);assert.ok(result.config.cameraMoves.every(m=>m.model===2));
- // Editing an old composite movement must not convert it to the virtual model.
+ // An old composite movement migrates once on load and is edited as the canonical virtual move.
  const old=structuredClone(result.config);old.id='old-move-scene';old.tracks=[];old.cameraMoves=[{id:'old-move',type:'push',start:0,duration:2,x:1100,y:600,scale:1.4}];
  const oldProject={schemaVersion:1,id:'old-move-project',title:'Old movement',createdAt:now,updatedAt:now,settings:{width:old.width,height:old.height,fps:old.fps},scenes:[old]};
  await page.locator('#project-file').setInputFiles({name:'old.story.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(oldProject))});
  await page.waitForFunction(()=>{try{return window.cameraStudio.getState().config.id==='old-move-scene';}catch{return false;}});
+ result=await state();assert.equal(result.config.cameraMoves[0].model,2);assert.equal(result.config.cameraMoves[0].legacyModel,1);
  await page.locator('[data-tab="effects"]').click();await page.locator('.effect-list-item').first().getByRole('button',{name:'Edit'}).click();
- assert.match(await page.locator('#animation-inspector').innerText(),/original camera behaviour/);
- await page.locator('#camera-scale').fill('1.5');await page.locator('#effect-form button[type=submit]').click();
- await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves[0].scale===1.5);
- result=await state();assert.equal(result.config.cameraMoves[0].model,undefined);
+ assert.doesNotMatch(await page.locator('#animation-inspector').innerText(),/original camera behaviour/);
+ await page.locator('#camera-travel').fill('25');await page.locator('#effect-form button[type=submit]').click();
+ await page.waitForFunction(()=>window.cameraStudio.getState().config.cameraMoves[0].travel===.25);
+ result=await state();assert.equal(result.config.cameraMoves[0].model,2);assert.equal(result.config.cameraMoves[0].legacyModel,1);
  await page.locator('#save').click();await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='Saved locally');
  await page.reload();await page.waitForFunction(()=>window.cameraStudio?.ready);result=await state();
  if(result.config.id!=='old-move-scene'){await page.locator('#project-list').getByRole('button',{name:'Old movement (imported)',exact:true}).click();await page.waitForFunction(()=>{try{return window.cameraStudio.getState().config.id==='old-move-scene';}catch{return false;}});result=await state();}
- assert.equal(result.config.cameraMoves[0].model,undefined);assert.equal(result.config.cameraMoves[0].scale,1.5);
+ assert.equal(result.config.cameraMoves[0].model,2);assert.equal(result.config.cameraMoves[0].travel,.25);
  assert.deepEqual(errors,[]);console.log('Camera movement browser workflow passed: all movement controls, preview, edit, delete, persistence and legacy compatibility.');
 } finally {await runtime.close();}

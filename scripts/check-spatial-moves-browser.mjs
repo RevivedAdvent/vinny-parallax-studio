@@ -46,7 +46,7 @@ try {
  // Preview at a seek time: layers and camera values are finite.
  await page.evaluate(()=>window.cameraStudio.renderTime(5));
  const st=await page.evaluate(()=>window.cameraStudio.getState());
- assert.ok(Number.isFinite(st.state.compositeCamera.x)&&Number.isFinite(st.state.compositeCamera.scale));
+ assert.ok(Number.isFinite(st.state.virtualCamera.x)&&Number.isFinite(st.state.virtualCamera.z)&&Number.isFinite(st.state.virtualCamera.focalLength));
  assert.deepEqual(errors,[]);
  console.log('Spatial browser workflow passed: B dropdown, six cards, tracking and reveal create, save and reload.');
 } finally {await runtime.close();}

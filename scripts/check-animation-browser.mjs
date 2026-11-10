@@ -183,7 +183,8 @@ try {
   await page.locator('#camera-reset').click();
   await page.waitForFunction(()=>(window.cameraStudio.getState().config.cameraMoves??[]).length===0);
   assert.equal((await effects()).length,effectsBefore,'reset keeps layer effects');
-  assert.equal((await state()).state.virtualCamera,undefined,'reset removes the virtual camera');
+  const resetCamera=(await state()).state.virtualCamera;assert.ok(resetCamera,'reset keeps the one canonical virtual camera');
+  assert.deepEqual({x:resetCamera.x,y:resetCamera.y,z:resetCamera.z,yaw:resetCamera.yaw,pitch:resetCamera.pitch,roll:resetCamera.roll},{x:0,y:0,z:0,yaw:0,pitch:0,roll:0},'reset returns the virtual camera to neutral');
   assert.equal((await state()).state.zoom,1);
   assert.ok(dialogs.some(message=>/Clear all camera movement/.test(message)),'reset asks for confirmation');
 

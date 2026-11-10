@@ -22,9 +22,9 @@ const categories: Category[] = [
   {
     id: 'depth', name: 'Depth & Perspective',
     items: [
-      { id: 'depth', name: 'Depth-based parallax', description: 'Nearer layers shift more than distant layers as the camera translates. Essential for the 2.5D look.' },
-      { id: 'depthScale', name: 'Depth-based Scale', description: 'Resize layers from their depth so foreground art reads slightly larger.' },
-      { id: 'planes', name: 'Multi-plane Camera', description: 'Add intermediate depth planes for finer separation than near, subject and far.' },
+      { id: 'depth', name: 'Depth-based parallax', description: 'Control how strongly each layer responds to virtual-camera translation. 100% is the natural physical response.' },
+      { id: 'depthScale', name: 'Depth-based Scale', description: 'Art-direct layer size from depth on top of the camera\u2019s natural perspective.' },
+      { id: 'planes', name: 'Depth Planes', description: 'Assign layers to shared depths so they project and react as one physical plane.' },
     ],
   },
   {
@@ -166,7 +166,7 @@ export function createParallaxWorkspace(options: {
       rows.push(`<div class="parallax-item"><div><b>Depth-based Scale</b><small>Near ${pct(cfg.depthScale?.near ?? 1)}% · Far ${pct(cfg.depthScale?.far ?? 1)}% · reference ${pct(cfg.depthScale?.reference ?? .5)}%</small></div><div class="parallax-actions"><button data-depth-scale-edit>Edit</button><button data-depth-scale-reset>Reset</button></div></div>`);
     }
     if ((cfg.depthPlanes ?? []).length) {
-      rows.push(`<div class="parallax-item"><div><b>Multi-plane Camera</b><small>${cfg.depthPlanes!.length} plane${cfg.depthPlanes!.length === 1 ? '' : 's'} · ${escape(cfg.depthPlanes!.map(plane => `${plane.name} ${pct(plane.depth)}%`).join(', '))}</small></div><div class="parallax-actions"><button data-planes-edit>Edit</button><button data-planes-reset>Reset</button></div></div>`);
+      rows.push(`<div class="parallax-item"><div><b>Depth Planes</b><small>${cfg.depthPlanes!.length} plane${cfg.depthPlanes!.length === 1 ? '' : 's'} · ${escape(cfg.depthPlanes!.map(plane => `${plane.name} ${pct(plane.depth)}%`).join(', '))}</small></div><div class="parallax-actions"><button data-planes-edit>Edit</button><button data-planes-reset>Reset</button></div></div>`);
     }
     for (const effect of [...(cfg.layerEffects ?? [])].sort((a, b) => a.start - b.start)) {
       rows.push(`<div class="parallax-item ${editing === effect.id ? 'selected' : ''}"><div><b>${names[effect.kind]}</b><small>${escape(layerNames(cfg, effect.layerIds))} · ${effect.start.toFixed(2)}s + ${effect.duration.toFixed(2)}s</small></div><div class="parallax-actions"><button data-effect-edit="${effect.id}">Edit</button><button data-effect-duplicate="${effect.id}">Duplicate</button><button data-effect-delete="${effect.id}">Delete</button></div></div>`);
@@ -297,13 +297,13 @@ export function createParallaxWorkspace(options: {
     const effect = (cfg.layerEffects ?? []).find(e => e.id === editing);
     const duration = sceneDuration(cfg);
 
-    // Depth-based parallax is frozen: its inspector and behaviour are unchanged.
+    // Depth-based parallax now expresses the shared camera's physical response.
     if (preset === 'depth') {
       const influence = cfg.parallax?.influence ?? {};
-      inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Parallax scales each layer's camera translation inside the projection, never a screen offset. 100% is neutral; 0% pins a layer to the camera. Depth 0 is background, 1 is foreground.</p>
+      inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Controls the layer's response to virtual-camera translation. 100% is the natural physical response from its effective Depth Plane or stored depth, 0% cancels translation, and above 100% exaggerates it. Camera rotation and lens behaviour are unchanged. Depth 0 is background, 1 is foreground.</p>
         <label class="field">Parallax strength · %<input id="parallax-strength" type="range" min="0" max="300" step="1" value="${pct(cfg.parallax?.strength ?? 1)}"><output id="parallax-strength-out">${pct(cfg.parallax?.strength ?? 1)}%</output></label>
         <fieldset class="parallax-layers"><legend>Layer depth and influence</legend>${cfg.layers.map(layer =>
-          `<div class="depth-layer"><div class="depth-layer-head"><span class="depth-name" title="${escape(layer.name)}">${escape(layer.name)}</span><label class="depth-influence">Influence %<span class="number-wrap"><input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}">${steppers('influence')}</span></label></div><div class="depth-row"><span class="depth-label">Depth</span><input id="depth-${layer.id}" type="range" min="0" max="100" step="1" value="${pct(layer.depth)}"><output id="depth-out-${layer.id}">${pct(layer.depth)}%</output></div></div>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
+          `<div class="depth-layer"><div class="depth-layer-head"><span class="depth-name" title="${escape(layer.name)}">${escape(layer.name)}</span><label class="depth-influence">Influence %<span class="number-wrap"><input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}">${steppers('influence')}</span></label></div><div class="depth-row"><span class="depth-label">Stored depth</span><input id="depth-${layer.id}" type="range" min="0" max="100" step="1" value="${pct(layer.depth)}"><output id="depth-out-${layer.id}">${pct(layer.depth)}%</output></div></div>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
         <div class="row-actions"><button class="outline" type="button" id="parallax-depth-save">Apply depth settings</button><button type="button" id="parallax-depth-reset">Reset to neutral</button></div>`;
       const strength = $<HTMLInputElement>('parallax-strength');
       strength.oninput = () => { $('parallax-strength-out').textContent = `${strength.value}%`; };
@@ -335,7 +335,7 @@ export function createParallaxWorkspace(options: {
     if (preset === 'depthScale') {
       const settings = cfg.depthScale;
       const influence = settings?.influence ?? {};
-      inspector.innerHTML = `<h3>Depth-based Scale</h3><p class="animation-note">Scale is applied to the layer plane before camera projection. Foreground layers use the near value and background layers use the far value.</p>
+      inspector.innerHTML = `<h3>Depth-based Scale</h3><p class="animation-note">An artistic size adjustment applied to each layer before projection. It does not replace the camera's physical perspective: foreground layers use the near value, background layers the far value, and the reference depth stays exactly 100%.</p>
         ${basicSection(
           numberField('depth-scale-near', 'Near scale · foreground %', pct(settings?.near ?? 1), 25, 300, 1)
           + numberField('depth-scale-far', 'Far scale · background %', pct(settings?.far ?? 1), 25, 300, 1)
@@ -371,7 +371,7 @@ export function createParallaxWorkspace(options: {
       const planes = cfg.depthPlanes ?? [];
       const assignment = (layerId: string) => planes.find(plane => plane.layerIds.includes(layerId))?.id ?? '';
       const planeOptions = (selected = '') => `${planes.map(plane => `<option value="${escape(plane.id)}" ${selected === plane.id ? 'selected' : ''}>${escape(plane.name)}</option>`).join('')}`;
-      inspector.innerHTML = `<h3>Multi-plane Camera</h3>
+      inspector.innerHTML = `<h3>Depth Planes</h3>
         ${basicSection(
           `<div class="parallax-plane-list">${planes.map((plane, index) => `<div class="parallax-plane" data-plane="${escape(plane.id)}">
             <div class="parallax-plane-head"><input id="plane-name-${index}" class="parallax-plane-name" type="text" maxlength="60" value="${escape(plane.name)}" aria-label="Plane name"><button type="button" class="parallax-plane-delete" data-plane-delete="${escape(plane.id)}" title="Delete plane" aria-label="Delete plane">✕</button></div>
@@ -384,7 +384,7 @@ export function createParallaxWorkspace(options: {
         )}
         ${advancedSection(
           planes.map((plane, index) => numberField(`plane-depth-exact-${index}`, `${escape(plane.name)} · exact depth`, plane.depth, 0, 1, .001)).join('')
-          + '<p class="animation-note">A plane overrides the stored depth for camera evaluation only. Draw order never changes, and unassigned layers keep their own depth. Deleting a plane returns its layers to their stored depth.</p>'
+          + '<p class="animation-note">A plane supplies the shared effective depth for its layers. Every plane member uses the same depth for projection, Parallax, Scale, focus and atmosphere. Draw order never changes, stored layer depth is preserved, and deleting a plane returns its layers to their own depth.</p>'
         )}`;
       // Keep the percentage and exact depth fields in step without hiding either one.
       planes.forEach((_, index) => {

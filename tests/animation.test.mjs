@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createScene, validateProject, createProject } from '../src/studio/project.ts';
 import { compileCamera } from '../src/camera/evaluate.ts';
-import { projectLayers } from '../src/camera/project.ts';
+import { projectLayers, projectedLayerInfo } from '../src/camera/project.ts';
 import { validateScene } from '../src/camera/validate.ts';
 import { effectTrack, putKeyframe, deleteKeyframe, snapSecond, secondsToFrame, sceneDuration, legacyKeyframes, keyframeValue, effectDuration, editEffectTiming } from '../src/camera/animation.ts';
 const make = () => { const s=createScene('Animation',10,1920,1080,24);s.layers=Array.from({length:4},(_,i)=>({id:`l${i}`,name:`Art ${i}`,asset:'/art.png',depth:i/3}));return s; };
@@ -50,9 +50,14 @@ test('safe validation: values clamp, malformed data reject; validation owns copy
 test('dolly differs from uniform zoom, pan and tilt preserve direction and depth; static preserves layers',()=>{
  for(const property of ['dolly','zoom','x','y'])for(const sign of [-1,1]) {
  const s=make(),base=property==='dolly'||property==='zoom'?1:0;s.animationTracks=[effect(s,{property,from:base,to:base+sign*(base?.2:120)})];
- const state=compileCamera(s).evaluateTime(5),poses=projectLayers(s,state);
- if(base) {near(state.zoom,base+sign*.2);if(property==='zoom')poses.forEach(p=>near(p.scale,1+sign*.2));else poses.forEach((p,i)=>near(p.scale,1+sign*.2*s.layers[i].depth));}
- else poses.forEach((p,i)=>near(p[property]-(property==='x'?960:540),-sign*120*s.layers[i].depth));
+ const core=compileCamera(s),state=core.evaluateTime(5),poses=projectLayers(s,state);
+ const camera=state.virtualCamera;
+ if(property==='zoom') {near(state.zoom,1+sign*.2);near(camera.focalLength,3840*(1+sign*.2));poses.forEach(p=>near(projectedLayerInfo(s,p,camera).scale,1+sign*.2));}
+ else if(property==='dolly') {near(state.zoom,1+sign*.2);assert.equal(Math.sign(camera.z),sign);assert.ok(Math.abs(camera.z)>0);const projected=poses.map(p=>projectedLayerInfo(s,p,camera));assert.ok(sign>0?projected[3].scale>projected[0].scale:projected[3].scale<projected[0].scale,'dolly changes relative depth scale in the correct direction');}
+ else {near(camera[property],sign*120);const projected=poses.map(p=>projectedLayerInfo(s,p,camera));const centre=property==='x'?960:540;
+  projected.forEach(p=>assert.ok(Math.sign(p[property]-centre)===-sign,`${property} moves in the expected direction`));
+  assert.ok(Math.abs(projected[3][property]-centre)>Math.abs(projected[0][property]-centre),'near layers respond more strongly');
+  assert.ok(Object.values(state.layers).every(pose=>pose.x===0&&pose.y===0),'camera animation is not baked into local layer transforms');}
  assert.deepEqual(poses.map(p=>p.id),s.layers.map(l=>l.id));
  }
  const s=make();s.animationTracks=[effect(s,{target:'layer:l0'})];const state=compileCamera(s).evaluateTime(5);assert.equal(state.x,0);assert.equal(state.zoom,1);assert.equal(state.layers.l0.x,120);

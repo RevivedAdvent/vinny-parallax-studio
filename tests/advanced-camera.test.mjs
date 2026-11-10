@@ -72,8 +72,11 @@ test('transient effects return to a composed base pose and the latest focus wins
 
 test('advanced moves validate, persist, and compose with unversioned moves',()=>{
  const s=scene();s.cameraMoves=[{id:'old',type:'pan',start:0,duration:2,x:500,y:300,scale:1},move('dutch',{angle:10}),move('handheld',{strength:.4,speed:1,seed:7}),move('rackFocus',{focusFrom:0,focusTo:1,strength:.5})];
- const p=createProject('Advanced');p.scenes=[s];const restored=validateProject(JSON.parse(JSON.stringify(p)));assert.deepEqual(restored.scenes[0].cameraMoves,s.cameraMoves);
- const state=compileCamera(restored.scenes[0]).evaluateTime(2);assert.equal(state.compositeCamera.x,100);assert.ok(state.virtualCamera.roll!==0);assert.ok(state.virtualCamera.focus);
- const bad=[move('dutch',{angle:31}),move('handheld',{strength:1,speed:1,seed:1.5}),move('impact',{strength:NaN}),move('whip',{angle:2,blur:'yes'}),move('dollyZoom',{travel:.3}),move('rackFocus',{focusFrom:0,focusTo:2,strength:.5}),move('orbit',{angle:13,radius:1,elevation:0}),move('orbit',{angle:1,radius:1,elevation:0,layerId:'missing'}),move('dutch',{angle:5,model:undefined})];
+ const p=createProject('Advanced');p.scenes=[s];const restored=validateProject(JSON.parse(JSON.stringify(p)));
+ assert.equal(restored.scenes[0].cameraMoves[0].model,2,'unversioned pan migrates to the canonical camera');
+ assert.equal(restored.scenes[0].cameraMoves[0].legacyModel,1);
+ assert.deepEqual(restored.scenes[0].cameraMoves.slice(1),s.cameraMoves.slice(1));
+ const state=compileCamera(restored.scenes[0]).evaluateTime(2);assert.ok(state.virtualCamera.yaw>0);assert.ok(state.virtualCamera.roll!==0);assert.ok(state.virtualCamera.focus);
+ const bad=[move('dutch',{angle:31}),move('handheld',{strength:1,speed:1,seed:1.5}),move('impact',{strength:NaN}),move('whip',{angle:2,blur:'yes'}),move('dollyZoom',{travel:.3}),move('rackFocus',{focusFrom:0,focusTo:2,strength:.5}),move('orbit',{angle:13,radius:1,elevation:0}),move('orbit',{angle:1,radius:1,elevation:0,layerId:'missing'}),move('dutch',{angle:5,model:3})];
  for(const invalid of bad){const copy=scene();copy.cameraMoves=[invalid];assert.throws(()=>compileCamera(copy),undefined,invalid.type);}
 });

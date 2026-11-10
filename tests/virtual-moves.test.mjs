@@ -65,7 +65,8 @@ test('reveal changes selected layer only and leaves virtual camera neutral',()=>
 
 test('legacy and virtual moves survive project round trips without reinterpretation',()=>{
  const s=scene();const old={id:'old',type:'pan',start:0,duration:2,x:600,y:300,scale:1};s.cameraMoves=[old,move('push',{scale:1.2})];
- const p=createProject('Compatibility');p.scenes=[s];const saved=validateProject(JSON.parse(JSON.stringify(p)));assert.deepEqual(saved.scenes[0].cameraMoves,s.cameraMoves);
- const state=compileCamera(saved.scenes[0]).evaluateTime(2);near(state.compositeCamera.x,200);assert.ok(state.virtualCamera.z>0);
+ const p=createProject('Compatibility');p.scenes=[s];const saved=validateProject(JSON.parse(JSON.stringify(p)));
+ assert.equal(saved.scenes[0].cameraMoves[0].model,2);assert.equal(saved.scenes[0].cameraMoves[0].legacyModel,1);assert.deepEqual(saved.scenes[0].cameraMoves[1],s.cameraMoves[1]);
+ const state=compileCamera(saved.scenes[0]).evaluateTime(2);assert.ok(state.virtualCamera.x>0,'the old pan becomes a virtual pan');assert.ok(state.virtualCamera.z>0);
  const invalid=structuredClone(s);invalid.cameraMoves[1].model=3;assert.throws(()=>compileCamera(invalid),/Unsupported/);
 });

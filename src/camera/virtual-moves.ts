@@ -7,11 +7,18 @@ import { applyAdvancedMove } from './advanced-moves.ts';
 const sinIntegral = (phi: number, rate: number, t: number) => Math.abs(rate) < 1e-8 ? t * Math.sin(phi) : (Math.cos(phi) - Math.cos(phi + rate * t)) / rate;
 const cosIntegral = (phi: number, rate: number, t: number) => Math.abs(rate) < 1e-8 ? t * Math.cos(phi) : (Math.sin(phi + rate * t) - Math.sin(phi)) / rate;
 
-/** Stateless, random-access evaluation; advanced transient effects use their own envelopes. */
-export function evaluateVirtualMoves(scene: CameraSceneConfig, seconds: number, intensity: number, targets: LayerTransform[]): VirtualCamera {
-  const c = calibration(scene.width, scene.height), camera = neutralCamera(c);
+/** Stateless, random-access evaluation; advanced transient effects use their own envelopes.
+ * `base` lets camera-targeted tracks feed the same canonical camera before
+ * movements compose on top. It is never a second independent camera.
+ */
+export function evaluateVirtualMoves(scene: CameraSceneConfig, seconds: number, intensity: number,
+  targets: LayerTransform[], base?: VirtualCamera): VirtualCamera {
+  const c = calibration(scene.width, scene.height);
+  const camera: VirtualCamera = base ? { ...base, principal: { ...base.principal } } : neutralCamera(c);
+  if (base?.focus) camera.focus = { ...base.focus };
   const cx = scene.width / 2, cy = scene.height / 2;
-  for (const move of [...(scene.cameraMoves ?? [])].filter(m => m.model === 2).sort((a, b) => a.start - b.start)) {
+  const moves = [...(scene.cameraMoves ?? [])].sort((a, b) => a.start - b.start);
+  for (const move of moves) {
     const t = clamp((seconds - move.start) / move.duration, 0, 1) * intensity;
     const advanced = applyAdvancedMove(camera, scene, move, seconds, intensity, targets);
     if (!advanced && (!t || move.type === 'reveal')) continue;
@@ -24,7 +31,7 @@ export function evaluateVirtualMoves(scene: CameraSceneConfig, seconds: number, 
         const dpitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.35, .35) - pitch;
         // Integrate the unit viewing direction while turning smoothly toward the
         // target. This gives constant physical speed and no initial pose jump.
-        const distance = c.focalLength * move.travel! * (move.type === 'push' ? 1 : -1);
+        const distance = c.focalLength * (move.travel ?? 0) * (move.type === 'push' ? 1 : -1);
         camera.x += distance * (sinIntegral(yaw + pitch, dyaw + dpitch, t) + sinIntegral(yaw - pitch, dyaw - dpitch, t)) / 2;
         camera.y += distance * sinIntegral(pitch, dpitch, t);
         camera.z += distance * (cosIntegral(yaw + pitch, dyaw + dpitch, t) + cosIntegral(yaw - pitch, dyaw - dpitch, t)) / 2;

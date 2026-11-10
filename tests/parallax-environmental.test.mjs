@@ -215,7 +215,7 @@ test('warp animates from neutral, validates geometry and projects with the camer
 
 test('environmental effects and depth planes roundtrip with the project', () => {
   const s = scene();
-  s.depthScale = { near: 1.25, far: .85, reference: .4, strength: .8, influence: { l3: .5 } };
+  s.depthScale = { near: 1.25, far: .85, reference: .4, strength: .8, influence: { l2: .5 } };
   s.depthPlanes = [{ id: 'mid', name: 'Midground', depth: .72, layerIds: ['l0', 'l1'] }];
   s.layerEffects = [
     effect('wind', { layerIds: ['l2'], direction: 'left', rotation: 5, spread: 60 }),

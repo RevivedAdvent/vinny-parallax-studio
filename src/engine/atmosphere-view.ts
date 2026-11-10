@@ -1,6 +1,7 @@
 import { Container, Sprite, Texture } from 'pixi.js';
 import type { AtmosphereOverlay, AtmosphereParticle, AtmosphereState } from '../camera/atmosphere.ts';
 import type { CameraSceneConfig } from '../camera/types.ts';
+import { resolvedDepth } from '../camera/layer-effects.ts';
 
 export interface AtmosphereViewOptions {
   /** The layer container; fog bands are inserted between artwork planes. */
@@ -122,8 +123,10 @@ export function createAtmosphereView(options: AtmosphereViewOptions) {
   const hideAll = () => Object.values(pools).forEach(pool => pool.forEach(sprite => { sprite.visible = false; }));
 
   function fogBounds(config: CameraSceneConfig) {
-    // Sit the fog between the far background and the midground when possible.
-    const target = config.layers.findIndex(layer => layer.depth >= .3);
+    // Physical fog sits between the far background and the midground. Effective
+    // depth (including Depth Plane assignment) decides the insertion point, but
+    // it never reorders the artwork stack itself.
+    const target = config.layers.findIndex(layer => resolvedDepth(config, layer.id) >= .3);
     const index = target < 0 ? 0 : target;
     if (fogContainer.parent !== options.world || options.world.getChildIndex(fogContainer) !== index) {
       options.world.addChildAt(fogContainer, Math.max(0, Math.min(index, options.world.children.length - 1)));

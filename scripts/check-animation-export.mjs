@@ -16,6 +16,13 @@ second.layers[0].x=-300;second.layers[0].scale*=.75;second.tracks=[];second.anim
  effectTrack({id:'second-fade',target:`layer:${second.layers[3].id}`,property:'opacity',start:0,duration:1,from:.2,to:1,easing:'linear',intensity:1},second),
 ];
 project.scenes.push(second);await writeFile(resolve(dir,'two-scene-project.json'),JSON.stringify(project,null,2));
+const firstRuntime=await launchCamera({config:first,intensity:1});
+try {
+ for(const time of [0,1,1.5,2,3,4]) {
+ const png=await firstRuntime.page.evaluate(t=>{window.cameraStudio.renderTime(t);return window.cameraStudio.capture().png;},time);
+ await writeFile(resolve(dir,`preview-${time}.png`),Buffer.from(png.split(',')[1],'base64'));
+ }
+}finally{await firstRuntime.close();}
 const runtime=await launchCamera({config:second,intensity:1});
 try {
  for(const time of [0,1,119/60]) {

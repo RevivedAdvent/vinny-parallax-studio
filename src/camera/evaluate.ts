@@ -2,13 +2,15 @@ import type { CameraSceneConfig, CameraState, Pose, Track } from './types.ts';
 import { clamp, drift, ease, finite } from './easing.ts';
 import { channel, legacyChannel, keyframeValue, neutralValue, propertyBounds } from './animation.ts';
 import { validateScene } from './validate.ts';
-import { applyReveals, evaluateMoves } from './moves.ts';
+import { applyReveals } from './moves.ts';
 import { projectLayers } from './project.ts';
 import { evaluateVirtualMoves } from './virtual-moves.ts';
 import { evaluateLayerEffects } from './layer-effects.ts';
 import { evaluateAtmosphere } from './atmosphere.ts';
+import { calibration, neutralCamera, type VirtualCamera } from './virtual-projection.ts';
 
 const neutralPose = (): Pose => ({ x: 0, y: 0, zoom: 1, roll: 0, opacity: 1 });
+
 export function trackValue(track: Track, frame: number, fps: number) {
   const neutral = track.property === 'zoom' ? 1 : 0;
   if (frame < track.startFrame || (frame > track.endFrame && track.holdAfter === false)) return neutral;
@@ -22,18 +24,80 @@ export function trackValue(track: Track, frame: number, fps: number) {
   }
   return clamp(value, track.limits.min, track.limits.max);
 }
+
+/**
+ * Map legacy camera-track totals onto the one virtual camera.
+ *
+ * The old frame tracks were affine deltas from neutral. Translation maps to
+ * camera translation (matching at the reference depth), roll maps to camera
+ * roll, uniform zoom to a lens change anchored at the authored camera anchor,
+ * and dolly to physical Z travel at the reference plane. These are inputs to
+ * the canonical camera, never a second transform applied after projection.
+ */
+export function applyCameraTracks(camera: VirtualCamera, config: CameraSceneConfig, tracks: CameraState['cameraTracks']): VirtualCamera {
+  const next: VirtualCamera = { ...camera, principal: { ...camera.principal } };
+  if (camera.focus) next.focus = { ...camera.focus };
+  const { anchor } = config.camera;
+  next.x += tracks.x;
+  next.y += tracks.y;
+
+  const roll = tracks.roll * Math.PI / 180;
+  if (roll !== 0) {
+    // Legacy roll was framed about the authored anchor rather than the centre.
+    const x = next.principal.x - anchor.x, y = next.principal.y - anchor.y;
+    const cos = Math.cos(roll), sin = Math.sin(roll);
+    next.principal.x = anchor.x + x * cos + y * sin;
+    next.principal.y = anchor.y - x * sin + y * cos;
+    next.roll += roll;
+  }
+
+  const uniform = 1 + tracks.uniform;
+  if (uniform !== 1) {
+    const factor = clamp(uniform, .25, 4);
+    next.focalLength *= factor;
+    next.principal.x = anchor.x + (next.principal.x - anchor.x) * factor;
+    next.principal.y = anchor.y + (next.principal.y - anchor.y) * factor;
+  }
+
+  if (tracks.dolly !== 0) {
+    // Screen scale at the reference plane becomes 1/(1 - travel), matching the
+    // old depth-weighted dolly factor as closely as a real camera can.
+    const travel = clamp(tracks.dolly / (1 + tracks.dolly), -.6, .5);
+    next.z += calibration(config.width, config.height).focalLength * travel;
+  }
+
+  const c = calibration(config.width, config.height);
+  next.x = clamp(next.x, -2 * c.focalLength, 2 * c.focalLength);
+  next.y = clamp(next.y, -2 * c.focalLength, 2 * c.focalLength);
+  next.z = clamp(next.z, -c.focalLength, .35 * c.focalLength);
+  next.yaw = clamp(next.yaw, -.35, .35);
+  next.pitch = clamp(next.pitch, -.35, .35);
+  next.roll = clamp(next.roll, -Math.PI / 6, Math.PI / 6);
+  next.focalLength = clamp(next.focalLength, c.focalLength * .25, c.focalLength * 4);
+  return next;
+}
+
 /** No clock, GPU, DOM, mutable PRNG, or integration. All tracks are additive deltas from neutral. */
 export function evaluateCamera(config: CameraSceneConfig, frame: number, intensity = 1): CameraState {
   if (!Number.isInteger(frame) || frame < 0 || frame >= config.totalFrames) throw new Error(`frameIndex must be 0..${config.totalFrames - 1}`);
   return evaluateSceneAtTime(config, frame / config.fps, intensity);
 }
+
 /** Random-access seconds evaluator shared by preview and 60 FPS export, including fractional source frames. */
 export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, intensity = 1): CameraState {
   if (!Number.isFinite(seconds) || seconds < 0 || seconds > config.totalFrames / config.fps) throw new Error('Time outside scene');
   const frame = seconds * config.fps;
   const amount = clamp(finite(intensity, 'intensity'), 0, 1);
-  const result: CameraState = { ...neutralPose(), frame, uniformDelta: 0, dollyDelta: 0, compositeCamera: { x: 0, y: 0, scale: 1 },
-    layers: Object.fromEntries(config.layers.map(l => [l.id, neutralPose()])) };
+  const c = calibration(config.width, config.height);
+  const result: CameraState = {
+    ...neutralPose(), frame, uniformDelta: 0, dollyDelta: 0,
+    virtualCamera: neutralCamera(c),
+    cameraTracks: { x: 0, y: 0, uniform: 0, roll: 0, dolly: 0 },
+    layers: Object.fromEntries(config.layers.map(l => [l.id, neutralPose()])),
+  };
+
+  // Layer animation and camera channels share the established override rules:
+  // a seconds-based channel replaces the matching legacy frame channel.
   const authored = new Set((config.animationTracks ?? []).filter(track => track.enabled !== false).map(channel));
   for (const track of config.tracks) {
     if (authored.has(legacyChannel(track))) continue;
@@ -63,6 +127,7 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
       if (p !== 'dolly') { const weight = amount * track.intensity; pose[p] = value * weight + neutral * (1 - weight); }
     }
   }
+
   const bounds = config.camera.limits;
   for (const p of ['x', 'y', 'roll'] as const) result[p] = clamp(result[p], bounds[p].min, bounds[p].max);
   result.uniformDelta = clamp(result.uniformDelta, bounds.zoom.min - 1, bounds.zoom.max - 1);
@@ -74,10 +139,10 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     result.uniformDelta *= correction; result.dollyDelta *= correction;
   }
   result.zoom = bounded;
-  // Tracking measures targets before the composite camera, so it needs the layer state first.
-  const targets = projectLayers(config, result);
-  result.compositeCamera = evaluateMoves(config, seconds, amount, targets);
-  applyReveals(config, result.layers, seconds, amount);
+  result.cameraTracks = { x: result.x, y: result.y, uniform: result.uniformDelta, roll: result.roll, dolly: result.dollyDelta };
+
+  // Local layer transforms: trim and validate first, then apply layer effects,
+  // atmosphere adjustments and reveals. Camera tracking sees this final pose.
   for (const [id, pose] of Object.entries(result.layers)) {
     for (const p of ['x', 'y', 'zoom'] as const) {
       const limits = authored.has(`layer:${id}/${p}`) ? propertyBounds(config, `layer:${id}`, p) : bounds[p];
@@ -103,7 +168,6 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     if (delta.wrap) (result.layerWraps ??= {})[id] = delta.wrap;
   }
   // Atmosphere layer deltas are framing/visibility adjustments, not camera motion.
-  // They are merged before projection so virtual-camera tracking sees the final pose.
   result.atmosphere = evaluateAtmosphere(config, seconds, amount);
   for (const [id, delta] of Object.entries(result.atmosphere.layers)) {
     const pose = result.layers[id];
@@ -112,9 +176,14 @@ export function evaluateSceneAtTime(config: CameraSceneConfig, seconds: number, 
     pose.zoom *= delta.scale; pose.roll += delta.rotation;
     pose.opacity = clamp(pose.opacity * delta.opacity, 0, 1);
   }
-  if ((config.cameraMoves ?? []).some(move => move.model === 2)) {
-    result.virtualCamera = evaluateVirtualMoves(config, seconds, amount, projectLayers(config, result));
-  }
+  applyReveals(config, result.layers, seconds, amount);
+
+  // One canonical camera: camera tracks establish the base pose, then all
+  // camera movements compose onto that same instance. There is no alternate
+  // affine renderer or conditional virtual-camera branch.
+  const localPoses = projectLayers(config, result);
+  const baseCamera = applyCameraTracks(neutralCamera(c), config, result.cameraTracks);
+  result.virtualCamera = evaluateVirtualMoves(config, seconds, amount, localPoses, baseCamera);
   return result;
 }
 

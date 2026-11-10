@@ -5,7 +5,7 @@ import { CAMERA_PROOF } from '../src/scenes/camera-proof.ts';
 import { ease, drift } from '../src/camera/easing.ts';
 import { validateScene } from '../src/camera/validate.ts';
 import { compileCamera, trackValue } from '../src/camera/evaluate.ts';
-import { projectLayers } from '../src/camera/project.ts';
+import { projectLayers, projectedLayerInfo } from '../src/camera/project.ts';
 
 const clone = () => structuredClone(CAMERA_PROOF);
 function track(overrides = {}) {
@@ -90,25 +90,38 @@ test('track order cannot change composition', () => {
 });
 test('optical zoom scales every layer uniformly', () => {
   const c=only(track({property:'zoom',startValue:1,endValue:1.12,limits:{min:1,max:1.18},projection:'uniform'}));
-  const poses=projectLayers(c,compileCamera(c).evaluate(30));
-  for(const pose of poses) close(pose.scale,1.15*1.12);
+  const state=compileCamera(c).evaluate(30), poses=projectLayers(c,state);
+  close(state.virtualCamera.focalLength,3840*1.12);
+  const scales=poses.map(pose=>projectedLayerInfo(c,pose,state.virtualCamera).scale);
+  for(const scale of scales) close(scale,1.15*1.12);
 });
-test('dolly scale delta exactly follows layer depth', () => {
+test('physical dolly magnifies near layers more than far layers', () => {
   const c=only(track({property:'zoom',startValue:1,endValue:1.12,limits:{min:1,max:1.18},projection:'dolly'}));
-  const poses=projectLayers(c,compileCamera(c).evaluate(30));
-  poses.forEach((p,i)=>close(p.scale/1.15-1,0.12*c.layers[i].depth));
-  assert.ok(poses[0].scale<poses[3].scale);
+  const state=compileCamera(c).evaluate(30), poses=projectLayers(c,state);
+  assert.ok(state.virtualCamera.z>0,'dolly moves the one camera forward');
+  poses.forEach(pose=>close(pose.scale,1.15));
+  const scales=poses.map(pose=>projectedLayerInfo(c,pose,state.virtualCamera).scale);
+  assert.ok(scales[0]<scales[3],'near layers grow more under a physical dolly');
+  assert.ok(scales[1]>1.15,'the dolly magnifies the midground too');
 });
-test('x/y translation ratios follow depths and sign convention', () => {
+test('x/y translation follows physical depth and sign convention', () => {
   const c=only(track({startValue:20,endValue:20}));
-  let p=projectLayers(c,compileCamera(c).evaluate(20));p.forEach((v,i)=>close(v.x-960,-20*c.layers[i].depth));
+  let state=compileCamera(c).evaluate(20); let p=projectLayers(c,state).map(pose=>projectedLayerInfo(c,pose,state.virtualCamera));
+  close(state.virtualCamera.x,20);
+  p.forEach(v=>assert.ok(v.x<960,'camera moving right shifts art left'));
+  assert.ok(Math.abs(p[3].x-960)>Math.abs(p[0].x-960),'near layers respond more strongly');
   c.tracks=[track({property:'y',startValue:20,endValue:20})];
-  p=projectLayers(c,compileCamera(c).evaluate(20));p.forEach((v,i)=>close(v.y-540,-20*c.layers[i].depth));
+  state=compileCamera(c).evaluate(20); p=projectLayers(c,state).map(pose=>projectedLayerInfo(c,pose,state.virtualCamera));
+  close(state.virtualCamera.y,20);
+  p.forEach(v=>assert.ok(v.y<540,'camera moving down shifts art up'));
+  assert.ok(Math.abs(p[3].y-540)>Math.abs(p[0].y-540),'near layers respond more strongly');
 });
 test('combined zoom/dolly clamp near-field scale contribution', () => {
   const c=clone(); c.tracks=['uniform','dolly'].map((projection,i)=>track({id:String(i),property:'zoom',startValue:1.18,endValue:1.18,projection,limits:{min:1,max:1.18}}));
   const state=compileCamera(c).evaluate(20);close(state.zoom,1.18);
-  close(projectLayers(c,state)[3].scale,1.15*1.18);
+  const poses=projectLayers(c,state),scales=poses.map(pose=>projectedLayerInfo(c,pose,state.virtualCamera).scale);
+  assert.ok(state.virtualCamera.z>0);assert.ok(scales[3]>scales[0]);
+  poses.forEach(pose=>close(pose.scale,1.15));
 });
 test('layer-targeted tracks do not move other layers', () => {
   const c=only(track({target:'layer:foreground',startValue:20,endValue:20}));

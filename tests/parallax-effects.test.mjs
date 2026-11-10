@@ -74,7 +74,7 @@ test('scale and rotation touch only the selected layer and keep Arrange values',
   near(at(2).l2.scale, 1.4); near(at(9).l2.scale, 1.4, 1e-9);
   assert.deepEqual(at(1).l0, neutralDelta());
   assert.deepEqual(s.layers[2], { id: 'l2', name: 'Layer 2', asset: '/art.png', depth: 1, x: 20, y: 0, scale: 1, rotation: 0, opacity: 1 });
-  const { state } = projected(s, 2); near(state.compositeCamera.x, 0); assert.equal(state.virtualCamera, undefined);
+  const { state } = projected(s, 2); near(state.cameraTracks.x, 0); near(state.virtualCamera.x, 0); near(state.virtualCamera.focalLength, 1600);
 });
 
 test('framing enters from each side, affects selected layers only and repeats', () => {
@@ -89,7 +89,7 @@ test('framing enters from each side, affects selected layers only and repeats', 
   near(evaluateLayerEffects(s, 1.5, 1).l2.x, -440);
   near(evaluateLayerEffects(s, 2, 1).l2.x, -880);
   assert.deepEqual(evaluateLayerEffects(s, 1, 1).l0, neutralDelta());
-  const { state } = projected(s, 1); near(state.compositeCamera.x, 0); near(state.compositeCamera.scale, 1);
+  const { state } = projected(s, 1); near(state.cameraTracks.x, 0); near(state.virtualCamera.z, 0); near(state.virtualCamera.focalLength, 1600);
 });
 
 test('fade multiplies the Arrange opacity and leaves other layers alone', () => {
@@ -133,7 +133,9 @@ test('layer effects compose with camera moves and persist through project round 
   assert.deepEqual(restored.parallax, s.parallax);
   assert.deepEqual(restored.layerEffects, s.layerEffects);
   const state = compileCamera(restored).evaluateTime(2);
-  near(state.compositeCamera.x, 200); assert.ok(state.virtualCamera.z > 0);
+  assert.ok(state.virtualCamera.x > 0, 'legacy pan now translates the shared camera');
+  assert.ok(state.virtualCamera.z > 0, 'the virtual push moves the shared camera forward');
+  assert.equal(restored.cameraMoves.every(move => move.model === 2), true);
   near(state.layers.l2.opacity, 1);
   assert.equal(state.layerMasks, undefined);
 });

@@ -29,11 +29,15 @@ export function validateProject(value: unknown): StoryProject {
   const p = structuredClone(value) as StoryProject;
   if (p.schemaVersion !== 1 || typeof p.id !== 'string' || !p.id.trim() || typeof p.title !== 'string' || !p.title.trim() || !Array.isArray(p.scenes) || !p.scenes.length || !p.settings || !Number.isInteger(p.settings.width) || !Number.isInteger(p.settings.height) || !Number.isInteger(p.settings.fps) || p.settings.width < 1 || p.settings.width > 8192 || p.settings.height < 1 || p.settings.height > 8192 || p.settings.fps < 1 || p.settings.fps > 120 || typeof p.createdAt !== 'string' || typeof p.updatedAt !== 'string') throw new Error('Unsupported or invalid StoryStudio project');
   const sceneIds = new Set<string>();
-  for (const scene of p.scenes) {
+  for (let index = 0; index < p.scenes.length; index++) {
+    // Replace with the validated scene so load-time compatibility migrations
+    // (for example legacy camera moves gaining the canonical camera model) are
+    // retained instead of being evaluated once and then discarded.
+    const scene = validateScene(p.scenes[index]);
+    p.scenes[index] = scene;
     if (!scene.id || sceneIds.has(scene.id)) throw new Error('Scene IDs must be unique');
     sceneIds.add(scene.id);
     if (!Number.isInteger(scene.width) || !Number.isInteger(scene.height) || !Number.isInteger(scene.fps) || !Number.isInteger(scene.totalFrames) || scene.totalFrames < 1) throw new Error(`Invalid settings for scene ${scene.title}`);
-    validateScene(scene);
     const layerIds = new Set<string>();
     for (const layer of scene.layers) {
       if (!layer.id || layerIds.has(layer.id)) throw new Error(`Layer IDs must be unique in ${scene.title}`);

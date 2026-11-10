@@ -72,7 +72,7 @@ export interface CameraSceneConfig {
   tracks: Track[];
   /** Seconds-based authoring. A channel here replaces the corresponding legacy channel. */
   animationTracks?: AnimationTrack[];
-  /** Independent composite camera moves. Legacy tracks remain supported. */
+  /** Camera moves. New and migrated moves always use the virtual camera. */
   cameraMoves?: CameraMove[];
   /** Depth response for the parallax workspace. Absent means fully neutral. */
   parallax?: ParallaxSettings;
@@ -92,9 +92,13 @@ export interface CameraState extends Pose {
   frame: number;
   uniformDelta: number;
   dollyDelta: number;
-  compositeCamera: { x: number; y: number; scale: number };
-  /** Present only when a scene contains version-2 camera moves. */
-  virtualCamera?: VirtualCamera;
+  /** Legacy track totals retained as authoring metadata; never a second transform. */
+  cameraTracks: { x: number; y: number; uniform: number; roll: number; dolly: number };
+  /**
+   * The one canonical camera used by preview, export and every depth-aware
+   * effect. A scene without moves still evaluates to a neutral camera.
+   */
+  virtualCamera: VirtualCamera;
   /** Mask state for reveal effects, keyed by layer id. */
   layerMasks?: Record<string, LayerMask>;
   /** Attached shadow state, keyed by layer id. */

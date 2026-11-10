@@ -457,7 +457,9 @@ export function parallaxFactor(scene: CameraSceneConfig, layerId: string): numbe
   return clamp(strength * influence, 0, 3);
 }
 
-/** Stored depth, unless the layer is assigned to an intermediate depth plane. */
+/** One authoritative effective depth for projection and every depth-aware effect.
+ * 0 is farthest/background, 0.5 is the reference plane and 1 is nearest.
+ * A Depth Plane assignment overrides the stored layer depth without rewriting it. */
 export function resolvedDepth(scene: CameraSceneConfig, layerId: string): number {
   const layer = scene.layers.find(candidate => candidate.id === layerId);
   if (!layer) return 0;
@@ -478,13 +480,6 @@ export function depthScaleFor(scene: CameraSceneConfig, layerId: string): number
   const endpoint = depth >= reference ? near : far;
   const influence = settings.influence?.[layerId] ?? 1;
   return clamp(1 + (endpoint - 1) * t * (settings.strength ?? 1) * influence, .2, 4);
-}
-
-/** Scale camera translation for one layer. Neutral factors return the camera unchanged,
- * so depth, ordering, rotation and lens behaviour stay exactly as calibrated. */
-export function parallaxCamera<T extends { x: number; y: number; z: number }>(camera: T, factor: number): T {
-  if (factor === 1) return camera;
-  return { ...camera, x: camera.x * factor, y: camera.y * factor, z: camera.z * factor };
 }
 
 const progress = (effect: LayerEffect, time: number) => clamp((time - effect.start) / effect.duration, 0, 1);

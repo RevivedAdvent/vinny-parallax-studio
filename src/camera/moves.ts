@@ -7,8 +7,10 @@ export const spatialMoves: CameraMoveType[] = ['truck', 'pedestal', 'diagonal', 
 export const advancedMoves: CameraMoveType[] = ['dutch', 'handheld', 'impact', 'whip', 'dollyZoom', 'rackFocus', 'orbit'];
 export interface CameraMove {
   id: string;
-  /** Missing means the original composite camera; 2 is the perspective camera. */
+  /** 2 is the canonical virtual camera. Missing legacy values are migrated on load. */
   model?: 2;
+  /** Present only on a move converted from the old composite camera format. */
+  legacyModel?: 1;
   type: CameraMoveType;
   start: number;
   duration: number;
@@ -59,19 +61,23 @@ export function validateMoves(scene: CameraSceneConfig) {
     ids.add(move.id);
     if (!Object.hasOwn(moveNames, move.type)) throw new Error('Invalid camera movement');
     if (move.model !== undefined && move.model !== 2) throw new Error('Unsupported camera movement model');
-    if (move.model === 2 && (move.type === 'push' || move.type === 'pull')) {
+    for (const field of ['start', 'duration', 'x', 'y', 'scale'] as const) finite(move[field], `movement ${field}`);
+    if (move.start < 0 || move.duration <= 0 || move.start + move.duration > scene.totalFrames / scene.fps + 1e-9) throw new Error('Camera movement must fit within the scene duration');
+    if (move.x < 0 || move.x > scene.width || move.y < 0 || move.y > scene.height) throw new Error('Camera coordinates must be inside the scene');
+    if (move.scale < .25 || move.scale > 4 || (move.type === 'push' && move.scale < 1) || (move.type === 'pull' && move.scale > 1)) throw new Error('Invalid camera movement scale');
+    if (advancedMoves.includes(move.type) && move.model !== 2) throw new Error('Advanced movements require the virtual camera');
+    // Compatibility boundary: the pre-virtual camera moves lacked `model`.
+    // Convert their authored intent once, here, instead of keeping a second
+    // affine camera alive in the runtime. Original fields are retained.
+    if (move.model === undefined) migrateLegacyMove(scene, move);
+    if ((move.type === 'push' || move.type === 'pull') && move.model === 2) {
       if (finite(move.travel as number, 'dolly travel') < 0 || move.travel! > .35) throw new Error('Dolly travel must be 0..35%');
     }
     if (move.model === 2 && move.type === 'crane') {
       if (finite(move.lookX as number, 'crane target X') < 0 || move.lookX! > scene.width || finite(move.lookY as number, 'crane target Y') < 0 || move.lookY! > scene.height) throw new Error('Crane target must be inside the scene');
     }
-    for (const field of ['start', 'duration', 'x', 'y', 'scale'] as const) finite(move[field], `movement ${field}`);
-    if (move.start < 0 || move.duration <= 0 || move.start + move.duration > scene.totalFrames / scene.fps + 1e-9) throw new Error('Camera movement must fit within the scene duration');
-    if (move.x < 0 || move.x > scene.width || move.y < 0 || move.y > scene.height) throw new Error('Camera coordinates must be inside the scene');
-    if (move.scale < .25 || move.scale > 4 || (move.type === 'push' && move.scale < 1) || (move.type === 'pull' && move.scale > 1)) throw new Error('Invalid camera movement scale');
     const layerIds = new Set(scene.layers.map(layer => layer.id));
     if (advancedMoves.includes(move.type)) {
-      if (move.model !== 2) throw new Error('Advanced movements require the virtual camera');
       const bounded = (value: unknown, label: string, min: number, max: number) => { const n=finite(value,label); if(n<min||n>max) throw new Error(`Invalid ${label}`); };
       if (move.type === 'dutch') bounded(move.angle,'roll angle',-30,30);
       if (move.type === 'whip') { bounded(move.angle,'whip angle',-20,20); if(typeof move.blur!=='boolean')throw new Error('Invalid whip blur'); }
@@ -91,6 +97,29 @@ export function validateMoves(scene: CameraSceneConfig) {
   }
 }
 
+/**
+ * Convert one old composite-camera move into the canonical virtual-camera form.
+ *
+ * The old push/pull (`scale`) multiplied the whole composition. A virtual dolly
+ * changes perspective instead. At the reference depth a forward push travel of
+ * t produces scale 1/(1-t), and a pull travel of t produces 1/(1+t), so the old
+ * scale becomes positive travel in both cases. Existing targets, tracking and
+ * reveal layer lists are preserved.
+ */
+export function migrateLegacyMove(scene: CameraSceneConfig, move: CameraMove): CameraMove {
+  move.legacyModel = 1;
+  move.model = 2;
+  if ((move.type === 'push' || move.type === 'pull') && move.travel === undefined) {
+    const travel = move.type === 'push' ? 1 - 1 / move.scale : 1 / move.scale - 1;
+    move.travel = clamp(travel, 0, .35);
+  }
+  if (move.type === 'crane') {
+    move.lookX ??= scene.width / 2;
+    move.lookY ??= scene.height / 2;
+  }
+  return move;
+}
+
 /** Reveal offsets move only the selected layers; they are added after authored layer transforms. */
 export function applyReveals(scene: CameraSceneConfig, layers: Record<string, Pose>, seconds: number, intensity: number) {
   for (const move of scene.cameraMoves ?? []) {
@@ -101,30 +130,4 @@ export function applyReveals(scene: CameraSceneConfig, layers: Record<string, Po
       layers[id].y += move.offsetY! * progress;
     }
   }
-}
-
-/**
- * Composite camera. Pan/truck shift x, tilt/pedestal/crane shift y, diagonal shifts both,
- * push/pull/zoom change scale. Tracking solves x/y so the target lands on its requested
- * screen point, using `targets` measured before the composite camera is applied.
- */
-export function evaluateMoves(scene: CameraSceneConfig, seconds: number, intensity: number, targets: LayerTransform[] = []) {
-  let x = 0, y = 0, scale = 1;
-  for (const move of [...(scene.cameraMoves ?? [])].filter(m => m.model !== 2).sort((a, b) => a.start - b.start)) {
-    const progress = clamp((seconds - move.start) / move.duration, 0, 1) * intensity;
-    const factor = 1 + (move.scale - 1) * progress;
-    if (move.type === 'pan' || move.type === 'push' || move.type === 'truck' || move.type === 'diagonal') x += (move.x - scene.width / 2 - x) * progress;
-    if (move.type === 'tilt' || move.type === 'push' || move.type === 'pedestal' || move.type === 'diagonal' || move.type === 'crane') y += (move.y - scene.height / 2 - y) * progress;
-    if (move.type === 'tracking') {
-      const target = targets.find(layer => layer.id === move.layerId);
-      if (target) {
-        const solvedX = (target.x - scene.width / 2) - (move.x - scene.width / 2) / scale;
-        const solvedY = (target.y - scene.height / 2) - (move.y - scene.height / 2) / scale;
-        x += (solvedX - x) * progress;
-        y += (solvedY - y) * progress;
-      }
-    }
-    if (move.type === 'push' || move.type === 'pull' || move.type === 'zoom') scale *= factor;
-  }
-  return { x, y, scale: clamp(scale, .25, 4) };
 }

@@ -1,9 +1,9 @@
 import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, PerspectiveMesh, Sprite, Texture, type Filter, type ColorMatrix } from 'pixi.js';
 import { compileCamera } from '../camera/evaluate.ts';
-import { layerCorners, projectedLayerInfo, projectLayers } from '../camera/project.ts';
-import { calibration, planePoint, projectPlane, projectPoint, type VirtualCamera } from '../camera/virtual-projection.ts';
+import { layerCorners, projectedLayerInfo, projectLayerCorners, projectLayerPoint, projectLayers } from '../camera/project.ts';
+import { calibration, isNeutralCamera } from '../camera/virtual-projection.ts';
 import { focusBlur } from '../camera/advanced-moves.ts';
-import { parallaxCamera, parallaxFactor, resolvedDepth } from '../camera/layer-effects.ts';
+import { resolvedDepth } from '../camera/layer-effects.ts';
 import { LayerMaskView } from './layer-masks.ts';
 import { createAtmosphereView } from './atmosphere-view.ts';
 import { clamp, finite } from '../camera/easing.ts';
@@ -141,20 +141,21 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   }
   function renderTime(seconds:number){state=core.evaluateTime(seconds,intensity);frame=seconds*config.fps;
     const base=projectLayers(config,state), camera=state.virtualCamera, cal=calibration(config.width,config.height);
-    const perspective=!!camera && (camera.x!==0||camera.y!==0||camera.z!==0||camera.yaw!==0||camera.pitch!==0||camera.roll!==0||camera.focalLength!==cal.focalLength||camera.principal.x!==config.width/2||camera.principal.y!==config.height/2);
+    const perspective=!isNeutralCamera(camera,cal);
     transforms=base.map((pose,i)=>{
       const layer=config.layers[i],sprite=sprites[i],mesh=meshes[i],group=groups[i],visible=layer.visible??true;
       const warp=state.layerWarps?.[layer.id], particles=state.layerParticles?.[layer.id];
       const wrap=state.layerWraps?.[layer.id], shadow=state.layerShadows?.[layer.id];
       const warpActive=!!warp&&warp.some((corner,cornerIndex)=>Math.abs(corner.x-[-1,1,1,-1][cornerIndex])>1e-6||Math.abs(corner.y-[-1,-1,1,1][cornerIndex])>1e-6);
       const useMesh=perspective||warpActive;
-      sprite.position.set(pose.x,pose.y);sprite.scale.set(pose.scale);sprite.rotation=pose.roll*Math.PI/180;sprite.alpha=pose.opacity;
+      const projected=projectedLayerInfo(config,pose,camera)??pose;
+      sprite.position.set(projected.x,projected.y);sprite.scale.set(projected.scale);sprite.rotation=projected.roll*Math.PI/180;sprite.alpha=pose.opacity;
       sprite.visible=visible&&!useMesh&&!wrap&&!particles; mesh.visible=false; mesh.alpha=pose.opacity;
       sprite.filters=null; mesh.filters=null;
-      if(!visible){ disposeShadow(i); disposeWrap(i); disposeParticles(i); return pose; }
+      if(!visible){ disposeShadow(i); disposeWrap(i); disposeParticles(i); return projected; }
       const layerFilters: Filter[] = [];
       const atmosphere=state.atmosphere?.layers[layer.id];
-      const blur=Math.min(24,focusBlur(resolvedDepth(config,layer.id),camera?.focus)+(atmosphere?.blur??0));
+      const blur=Math.min(24,focusBlur(resolvedDepth(config,layer.id),camera.focus)+(atmosphere?.blur??0));
       if(blur>.01) {
         const filter=focusFilters[i]??(focusFilters[i]=new BlurFilter({strength:blur,quality:2,resolution:.5}));
         filter.strength=blur;
@@ -166,19 +167,18 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
         layerFilters.push(filter);
       }
       if(layerFilters.length) (useMesh?mesh:sprite).filters=layerFilters;
-      const layerCamera=camera?parallaxCamera(camera,parallaxFactor(config,layer.id)):undefined;
       if(useMesh) {
         const corners=layerCorners(pose,sprite.texture.width,sprite.texture.height,warp);
-        const projected=perspective&&layerCamera?projectPlane(cal,layerCamera,pose.depth,corners):corners;
-        if(projected) {
-          mesh.setCorners(projected[0].x,projected[0].y,projected[1].x,projected[1].y,projected[2].x,projected[2].y,projected[3].x,projected[3].y);
+        const quad=projectLayerCorners(config,camera,pose,corners);
+        if(quad) {
+          mesh.setCorners(quad[0].x,quad[0].y,quad[1].x,quad[1].y,quad[2].x,quad[2].y,quad[3].x,quad[3].y);
           mesh.visible=true; mesh.alpha=pose.opacity;
-        } else if(!warpActive) sprite.visible=true;
+        } else if(!perspective&&!warpActive) sprite.visible=true;
       }
       if(shadow) {
         const view=ensureShadow(i);
         const shadowPose={...pose,x:pose.x+shadow.x,y:pose.y+shadow.y};
-        const info=perspective&&camera?projectedLayerInfo(config,shadowPose,camera):shadowPose;
+        const info=projectedLayerInfo(config,shadowPose,camera);
         if(info) {
           view.position.set(info.x,info.y); view.scale.set(info.scale); view.rotation=info.roll*Math.PI/180;
           view.alpha=pose.opacity*shadow.opacity; view.tint=parseInt(shadow.color.replace('#',''),16);
@@ -197,7 +197,7 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
           views.forEach((view,k)=>{
             const shifted=k-(views.length-1)/2;
             const copy=horizontal?{...pose,x:pose.x+offset+shifted*extent}:{...pose,y:pose.y+offset+shifted*extent};
-            const info=perspective&&camera?projectedLayerInfo(config,copy,camera):copy;
+            const info=projectedLayerInfo(config,copy,camera);
             if(!info){view.visible=false;return;}
             view.position.set(info.x,info.y); view.scale.set(info.scale); view.rotation=info.roll*Math.PI/180;
             view.alpha=pose.opacity; view.visible=true;
@@ -206,23 +206,21 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
       } else if(wrapViews[i]?.length) disposeWrap(i);
       if(particles) {
         const views=ensureParticles(i,particles.length);
-        const baseInfo=perspective&&camera?projectedLayerInfo(config,pose,camera):undefined;
+        const baseInfo=projectedLayerInfo(config,pose,camera);
         particles.forEach((particle,k)=>{
           const view=views[k];
-          let x=pose.x+particle.x, y=pose.y+particle.y, scale=(particle.size/sprite.texture.width)*pose.scale;
-          if(perspective&&layerCamera) {
-            const center=projectPoint(layerCamera,planePoint(cal,pose.depth,{x,y}),cal.focalLength*.1);
-            if(!center){view.visible=false;return;}
-            x=center.x; y=center.y;
-            if(baseInfo) scale=(particle.size/sprite.texture.width)*(baseInfo.scale/Math.max(.0001,pose.scale));
-          }
-          view.position.set(x,y); view.scale.set(scale); view.rotation=particle.rotation*Math.PI/180;
+          const point={x:pose.x+particle.x,y:pose.y+particle.y};
+          const center=projectLayerPoint(config,camera,pose,point);
+          if(!center){view.visible=false;return;}
+          let scale=(particle.size/sprite.texture.width)*pose.scale;
+          if(baseInfo) scale=(particle.size/sprite.texture.width)*(baseInfo.scale/Math.max(.0001,pose.scale));
+          view.position.set(center.x,center.y); view.scale.set(scale); view.rotation=particle.rotation*Math.PI/180;
           view.alpha=particle.opacity*pose.opacity; view.visible=true;
         });
       } else if(particleViews[i]?.length) disposeParticles(i);
-      return perspective&&camera?projectedLayerInfo(config,pose,camera)??pose:pose;
+      return projected;
     });
-    const motionBlur=camera?.motionBlur??0;
+    const motionBlur=camera.motionBlur??0;
     const worldFilters: Filter[] = [];
     if(motionBlur>.01){whipFilter??=new BlurFilter({strengthX:motionBlur,strengthY:0,quality:2,resolution:.5});whipFilter.strengthX=motionBlur;whipFilter.strengthY=0;worldFilters.push(whipFilter);}
     const brightness=state.atmosphere?.sceneBrightness??1;
@@ -257,16 +255,16 @@ export async function createCameraScene(host: HTMLElement, input: CameraSceneCon
   return {app,renderFrame,renderTime,capture,setConfig,
     setIntensity(value:number){intensity=clamp(finite(value,'intensity'),0,1);renderTime(frame/config.fps);},
     setVisible(id:string,visible:boolean){const index=config.layers.findIndex(l=>l.id===id);if(index<0)throw new Error(`Unknown layer ${id}`);config.layers[index].visible=visible;sprites[index].visible=visible;renderTime(frame/config.fps);},
-    getCameraView:()=>({...state.compositeCamera, virtualCamera:state.virtualCamera}),
+    getCameraView:()=>({x:0,y:0,scale:1,virtualCamera:state.virtualCamera}),
     /** Read-only snapshot for the Arrange overlay: no clones of atmosphere or mask state. */
     getAdjustView:()=>{const camera=state.virtualCamera,cal=calibration(config.width,config.height);return {width:config.width,height:config.height,
-      camera:{...state.compositeCamera,virtualCamera:camera},
-      roll:state.roll,uniformDelta:state.uniformDelta,dollyDelta:state.dollyDelta,
-      perspective:!!camera&&(camera.x!==0||camera.y!==0||camera.z!==0||camera.yaw!==0||camera.pitch!==0||camera.roll!==0||camera.focalLength!==cal.focalLength||camera.principal.x!==config.width/2||camera.principal.y!==config.height/2),
+      camera:{x:0,y:0,scale:1},
+      roll:0,uniformDelta:0,dollyDelta:0,
+      perspective:!isNeutralCamera(camera,cal),
       layers:config.layers.map((layer,index)=>{const pose=transforms[index];return {id:layer.id,x:pose?.x??0,y:pose?.y??0,scale:pose?.scale??1,roll:pose?.roll??0,opacity:pose?.opacity??1,depth:pose?.depth??layer.depth,visible:layer.visible??true,locked:layer.locked===true,
         width:layer.width??sprites[index]?.texture.width??0,height:layer.height??sprites[index]?.texture.height??0};})};},
     getState:()=>({frame,intensity,state:structuredClone(state),transforms:structuredClone(transforms),
-      layerBlur:Object.fromEntries(config.layers.map(l=>[l.id,focusBlur(resolvedDepth(config,l.id),state.virtualCamera?.focus)])),
+      layerBlur:Object.fromEntries(config.layers.map(l=>[l.id,focusBlur(resolvedDepth(config,l.id),state.virtualCamera.focus)])),
       spriteAlpha:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].alpha])),
       visible:Object.fromEntries(config.layers.map((l,i)=>[l.id,sprites[i].visible||meshes[i].visible||(wrapViews[i]??[]).some(v=>v.visible)||(particleViews[i]??[]).some(v=>v.visible)])),
       shadows:Object.fromEntries(config.layers.map(l=>[l.id,state.layerShadows?.[l.id]??null])),

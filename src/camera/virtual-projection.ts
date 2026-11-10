@@ -35,6 +35,30 @@ export function neutralCamera(c: ProjectionCalibration): VirtualCamera {
     focalLength: c.focalLength, principal: { x: c.width / 2, y: c.height / 2 } };
 }
 
+/** True when the camera is geometrically identical to the calibrated neutral view. */
+export function isNeutralCamera(camera: VirtualCamera, c: ProjectionCalibration): boolean {
+  return camera.x === 0 && camera.y === 0 && camera.z === 0 && camera.yaw === 0 && camera.pitch === 0
+    && camera.roll === 0 && camera.focalLength === c.focalLength
+    && camera.principal.x === c.width / 2 && camera.principal.y === c.height / 2;
+}
+
+/**
+ * World-space parallax compensation for one layer.
+ *
+ * P is the layer point at its true effective depth. C is the shared virtual
+ * camera position. response r = 1 is the physical baseline, 0 cancels camera
+ * translation and values above 1 exaggerate it. Lens, rotation and the camera
+ * instance itself are untouched.
+ */
+export function compensatedPoint(point: Point3, camera: Point3, response: number): Point3 {
+  const compensation = 1 - response;
+  return {
+    x: point.x + compensation * camera.x,
+    y: point.y + compensation * camera.y,
+    z: point.z + compensation * camera.z,
+  };
+}
+
 /** Background 0 is farther away; foreground 1 is nearer. */
 export function planeDistance(c: ProjectionCalibration, depth: number): number {
   if (!Number.isFinite(depth) || depth < 0 || depth > 1) throw new Error('Invalid layer depth');
@@ -84,7 +108,20 @@ export function projectPoint(camera: VirtualCamera, point: Point3, near: number)
 export function projectPlane(c: ProjectionCalibration, camera: VirtualCamera, depth: number,
   corners: readonly [Point2, Point2, Point2, Point2], near = c.focalLength * .1): [Point2, Point2, Point2, Point2] | null {
   if (corners.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null;
-  const projected = corners.map(point => projectPoint(camera, planePoint(c, depth, point), near));
+  return finishProjectedPlane(c, corners.map(point => projectPoint(camera, planePoint(c, depth, point), near)));
+}
+
+/** Project a layer plane after applying its own Parallax response to every corner.
+ * The shared camera is passed unchanged; only the world points are compensated. */
+export function projectCompensatedPlane(c: ProjectionCalibration, camera: VirtualCamera, depth: number,
+  corners: readonly [Point2, Point2, Point2, Point2], response: number, near = c.focalLength * .1): [Point2, Point2, Point2, Point2] | null {
+  if (corners.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null;
+  const projected = corners.map(point => projectPoint(camera,
+    compensatedPoint(planePoint(c, depth, point), camera, response), near));
+  return finishProjectedPlane(c, projected);
+}
+
+function finishProjectedPlane(c: ProjectionCalibration, projected: (Point2 | null)[]): [Point2, Point2, Point2, Point2] | null {
   const limit = Math.max(c.width, c.height) * 100;
   if (projected.some(point => point === null || Math.abs(point.x) > limit || Math.abs(point.y) > limit)) return null;
   const result = projected as [Point2, Point2, Point2, Point2];
