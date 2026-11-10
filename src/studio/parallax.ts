@@ -1,7 +1,7 @@
 import type { CameraSceneConfig } from '../camera/types.ts';
 import { sceneDuration } from '../camera/animation.ts';
 import type {
-  AmbientDirection, AmbientMode, AmbientMotion, DriftAxis, DriftMotion, FrameDirection,
+  AmbientDirection, AmbientMode, AmbientMotion, DepthScaleSettings, DriftAxis, DriftMotion, FrameDirection,
   LayerEffect, LayerEffectKind, MaskKind, WindDirection,
 } from '../camera/layer-effects.ts';
 import {
@@ -9,7 +9,8 @@ import {
   mountTargetPicker, type PickerState, type TargetMode,
 } from './parallax-layers.ts';
 
-type Feature = 'depth' | 'depthScale' | 'planes' | LayerEffectKind;
+/** 'depth' is the combined Depth & Perspective feature; Depth Planes stays separate. */
+type Feature = 'depth' | 'planes' | LayerEffectKind;
 
 interface CatalogueItem { id: Feature; name: string; description: string }
 interface Category { id: string; name: string; items: CatalogueItem[] }
@@ -22,9 +23,8 @@ const categories: Category[] = [
   {
     id: 'depth', name: 'Depth & Perspective',
     items: [
-      { id: 'depth', name: 'Depth-based parallax', description: 'Control how strongly each layer responds to virtual-camera translation. 100% is the natural physical response.' },
-      { id: 'depthScale', name: 'Depth-based Scale', description: 'Art-direct layer size from depth on top of the camera\u2019s natural perspective.' },
-      { id: 'planes', name: 'Depth Planes', description: 'Assign layers to shared depths so they project and react as one physical plane.' },
+      { id: 'depth', name: 'Depth based Parallax & Scale', description: 'Control how layers respond to virtual-camera movement, set their effective depth, and optionally art-direct their relative size.' },
+      { id: 'planes', name: 'Depth Planes', description: 'Assign layers to shared depths so they project and respond as one physical plane.' },
     ],
   },
   {
@@ -60,6 +60,9 @@ const categoriesOpen = new Map<string, boolean>([['depth', true]]);
 
 const pct = (value: number) => Math.round(value * 1000) / 10;
 const round = (value: number, places = 3) => Math.round(value * 10 ** places) / 10 ** places;
+/** Share of the track before the thumb, painted as the gold fill of a range control. */
+const rangeFill = (value: number, min: number, max: number) =>
+  `${Math.round(Math.min(1, Math.max(0, max > min ? (value - min) / (max - min) : 0)) * 1000) / 10}%`;
 
 export function createParallaxWorkspace(options: {
   getScene: () => CameraSceneConfig; getSceneKey: () => string; getTime: () => number; seek: (seconds: number) => void;
@@ -158,12 +161,13 @@ export function createParallaxWorkspace(options: {
 
   function renderApplied(cfg: CameraSceneConfig) {
     const rows: string[] = [];
-    if (!isNeutral(cfg)) {
+    if (!isNeutral(cfg) || !isDepthScaleNeutral(cfg)) {
       const influenced = Object.entries(cfg.parallax?.influence ?? {}).filter(([, value]) => value !== 1);
-      rows.push(`<div class="parallax-item"><div><b>Depth-based parallax</b><small>Strength ${pct(cfg.parallax?.strength ?? 1)}%${influenced.length ? ` · ${influenced.map(([id, value]) => `${escape(layerName(cfg, id))} ${pct(value)}%`).join(', ')}` : ''}</small></div><div class="parallax-actions"><button data-depth-edit>Edit</button><button data-depth-reset>Reset</button></div></div>`);
-    }
-    if (!isDepthScaleNeutral(cfg)) {
-      rows.push(`<div class="parallax-item"><div><b>Depth-based Scale</b><small>Near ${pct(cfg.depthScale?.near ?? 1)}% · Far ${pct(cfg.depthScale?.far ?? 1)}% · reference ${pct(cfg.depthScale?.reference ?? .5)}%</small></div><div class="parallax-actions"><button data-depth-scale-edit>Edit</button><button data-depth-scale-reset>Reset</button></div></div>`);
+      const scale = cfg.depthScale;
+      const summary = [`Strength ${pct(cfg.parallax?.strength ?? 1)}%`];
+      if (influenced.length) summary.push(influenced.map(([id, value]) => `${escape(layerName(cfg, id))} ${pct(value)}%`).join(', '));
+      summary.push(scale ? `Size adjustment on · foreground ${pct(scale.near ?? 1)}% / background ${pct(scale.far ?? 1)}%` : 'Size adjustment off');
+      rows.push(`<div class="parallax-item"><div><b>Depth based Parallax &amp; Scale</b><small>${summary.join(' · ')}</small></div><div class="parallax-actions"><button data-depth-edit>Edit</button><button data-depth-reset>Reset</button></div></div>`);
     }
     if ((cfg.depthPlanes ?? []).length) {
       rows.push(`<div class="parallax-item"><div><b>Depth Planes</b><small>${cfg.depthPlanes!.length} plane${cfg.depthPlanes!.length === 1 ? '' : 's'} · ${escape(cfg.depthPlanes!.map(plane => `${plane.name} ${pct(plane.depth)}%`).join(', '))}</small></div><div class="parallax-actions"><button data-planes-edit>Edit</button><button data-planes-reset>Reset</button></div></div>`);
@@ -175,19 +179,14 @@ export function createParallaxWorkspace(options: {
     const appliedCount = $('parallax-count');
     if (appliedCount) appliedCount.textContent = String(rows.length);
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-edit]').forEach(button => button.onclick = () => { preset = 'depth'; editing = ''; render(); });
-    $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-scale-edit]').forEach(button => button.onclick = () => { preset = 'depthScale'; editing = ''; render(); });
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-planes-edit]').forEach(button => button.onclick = () => { preset = 'planes'; editing = ''; render(); });
-    $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-scale-reset]').forEach(button => button.onclick = () => {
-      if (!confirm('Reset depth-based scale to neutral? Other effects are kept.')) return;
-      const next = structuredClone(cfg); next.depthScale = undefined; void save(next);
-    });
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-planes-reset]').forEach(button => button.onclick = () => {
       if (!confirm('Delete all depth planes? Layers keep their stored depth.')) return;
       const next = structuredClone(cfg); next.depthPlanes = undefined; void save(next);
     });
     $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-depth-reset]').forEach(button => button.onclick = () => {
-      if (!confirm('Reset depth response to neutral? Layer effects are kept.')) return;
-      const next = structuredClone(cfg); next.parallax = undefined; void save(next);
+      if (!confirm('Reset Depth & Perspective to neutral? Layer depth, Depth Planes and other effects are kept.')) return;
+      const next = structuredClone(cfg); next.parallax = undefined; next.depthScale = undefined; void save(next);
     });
     for (const button of $('parallax-effects-list').querySelectorAll<HTMLButtonElement>('[data-effect-edit]')) {
       button.onclick = () => { const effect = cfg.layerEffects?.find(e => e.id === button.dataset.effectEdit); if (!effect) return; preset = effect.kind; editing = effect.id; render(); };
@@ -216,6 +215,17 @@ export function createParallaxWorkspace(options: {
     `<span class="number-steppers"><button type="button" class="number-step" data-step="up" aria-label="Increase ${escape(label)}"></button><button type="button" class="number-step" data-step="down" aria-label="Decrease ${escape(label)}"></button></span>`;
   const numberField = (id: string, label: string, value: number, min: number, max: number, step: number | 'any' = 'any', hint = '') =>
     `<label class="field"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="number-wrap"><input id="${id}" type="number" required min="${min}" max="${max}" step="${step}" value="${round(value)}">${steppers(label)}</span></label>`;
+
+  /** A range slider paired with the same compact numeric field used elsewhere. */
+  const rangeField = (id: string, label: string, value: number, min: number, max: number, step: number, hint = '') =>
+    `<div class="field parallax-range-field"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="parallax-range-row"><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${round(value)}" style="--range-fill:${rangeFill(value, min, max)}" aria-label="${escape(label)}"><span class="number-wrap"><input id="${id}-value" type="number" required min="${min}" max="${max}" step="${step}" value="${round(value)}" aria-label="${escape(label)} value">${steppers(label)}</span></span></div>`;
+
+  /** Keep a range control's painted fill in step with its value. */
+  const paintRange = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    const min = input.min === '' ? 0 : Number(input.min), max = input.max === '' ? 100 : Number(input.max);
+    if (Number.isFinite(input.valueAsNumber)) input.style.setProperty('--range-fill', rangeFill(input.valueAsNumber, min, max));
+  };
 
   const segmented = (name: string, label: string, choices: { value: string; label: string; title?: string }[], current: string) =>
     `<div class="parallax-segment-field"><span class="parallax-segment-label">${label}</span><div class="segmented" role="radiogroup" aria-label="${label}">${choices.map(choice =>
@@ -297,73 +307,110 @@ export function createParallaxWorkspace(options: {
     const effect = (cfg.layerEffects ?? []).find(e => e.id === editing);
     const duration = sceneDuration(cfg);
 
-    // Depth-based parallax now expresses the shared camera's physical response.
+    // Depth & Perspective: camera response first, optional size adjustment in Advanced.
     if (preset === 'depth') {
       const influence = cfg.parallax?.influence ?? {};
-      inspector.innerHTML = `<h3>Depth-based parallax</h3><p class="animation-note">Controls the layer's response to virtual-camera translation. 100% is the natural physical response from its effective Depth Plane or stored depth, 0% cancels translation, and above 100% exaggerates it. Camera rotation and lens behaviour are unchanged. Depth 0 is background, 1 is foreground.</p>
-        <label class="field">Parallax strength · %<input id="parallax-strength" type="range" min="0" max="300" step="1" value="${pct(cfg.parallax?.strength ?? 1)}"><output id="parallax-strength-out">${pct(cfg.parallax?.strength ?? 1)}%</output></label>
-        <fieldset class="parallax-layers"><legend>Layer depth and influence</legend>${cfg.layers.map(layer =>
-          `<div class="depth-layer"><div class="depth-layer-head"><span class="depth-name" title="${escape(layer.name)}">${escape(layer.name)}</span><label class="depth-influence">Influence %<span class="number-wrap"><input id="influence-${layer.id}" type="number" min="0" max="300" step="1" value="${pct(influence[layer.id] ?? 1)}">${steppers('influence')}</span></label></div><div class="depth-row"><span class="depth-label">Stored depth</span><input id="depth-${layer.id}" type="range" min="0" max="100" step="1" value="${pct(layer.depth)}"><output id="depth-out-${layer.id}">${pct(layer.depth)}%</output></div></div>`).join('') || '<p class="parallax-empty">Import artwork first.</p>'}</fieldset>
-        <div class="row-actions"><button class="outline" type="button" id="parallax-depth-save">Apply depth settings</button><button type="button" id="parallax-depth-reset">Reset to neutral</button></div>`;
-      const strength = $<HTMLInputElement>('parallax-strength');
-      strength.oninput = () => { $('parallax-strength-out').textContent = `${strength.value}%`; };
-      for (const layer of cfg.layers) {
-        const slider = document.getElementById(`depth-${layer.id}`) as HTMLInputElement | null;
-        if (slider) slider.oninput = () => { const out = document.getElementById(`depth-out-${layer.id}`); if (out) out.textContent = `${slider.value}%`; };
-      }
-      $<HTMLButtonElement>('parallax-depth-save').onclick = () => {
-        const next = structuredClone(cfg);
-        const influenceNext: Record<string, number> = {};
-        for (const layer of cfg.layers) {
-          const field = document.getElementById(`influence-${layer.id}`) as HTMLInputElement | null;
-          const value = (field?.valueAsNumber ?? 100) / 100;
-          if (!Number.isFinite(value) || value < 0 || value > 3) { options.notify('Influence must be between 0 and 300%'); return; }
-          if (value !== 1) influenceNext[layer.id] = value;
-          const depthField = document.getElementById(`depth-${layer.id}`) as HTMLInputElement | null;
-          const depth = depthField ? depthField.valueAsNumber / 100 : layer.depth;
-          if (!Number.isFinite(depth) || depth < 0 || depth > 1) { options.notify('Depth must be between 0 and 100%'); return; }
-          const target = next.layers.find(candidate => candidate.id === layer.id);
-          if (target) target.depth = depth;
-        }
-        next.parallax = { strength: Math.max(0, Math.min(3, strength.valueAsNumber / 100)), influence: influenceNext };
-        void save(next);
-      };
-      $<HTMLButtonElement>('parallax-depth-reset').onclick = () => { const next = structuredClone(cfg); next.parallax = undefined; void save(next); };
-      return;
-    }
-
-    if (preset === 'depthScale') {
+      const planes = cfg.depthPlanes ?? [];
+      const planeFor = (layerId: string) => planes.find(plane => plane.layerIds.includes(layerId));
       const settings = cfg.depthScale;
-      const influence = settings?.influence ?? {};
-      inspector.innerHTML = `<h3>Depth-based Scale</h3><p class="animation-note">An artistic size adjustment applied to each layer before projection. It does not replace the camera's physical perspective: foreground layers use the near value, background layers the far value, and the reference depth stays exactly 100%.</p>
+      const sizeEnabled = Boolean(settings);
+      const legacyNote = settings && ((settings.strength ?? 1) !== 1 || Object.values(settings.influence ?? {}).some(value => value !== 1))
+        ? '<p class="parallax-compat-note">Existing size strength and per-layer size overrides are preserved.</p>' : '';
+      const layerRow = (id: string, name: string, stored: number) => {
+        const plane = planeFor(id);
+        const effective = plane ? Math.min(1, Math.max(0, plane.depth)) : stored;
+        const depthControl = plane
+          ? `<div class="parallax-depth-inherited"><span>Inherited from <b>${escape(plane.name)}</b> · ${pct(effective)}%</span><small>Stored ${pct(stored)}% is kept · edit this plane in Depth Planes</small></div>`
+          : `<div class="parallax-depth-row"><span class="parallax-depth-label">Depth</span><input id="depth-${id}" type="range" min="0" max="100" step="1" value="${pct(effective)}" style="--range-fill:${rangeFill(pct(effective), 0, 100)}" aria-label="Depth for ${escape(name)}"><output id="depth-out-${id}">${pct(effective)}%</output></div>`;
+        return `<div class="parallax-depth-layer"><div class="parallax-layer-row"><span class="parallax-layer-row-name" title="${escape(name)}">${escape(name)}</span><span class="number-wrap"><input id="influence-${id}" type="number" required min="0" max="300" step="1" value="${pct(influence[id] ?? 1)}" aria-label="Parallax influence for ${escape(name)}">${steppers('influence')}</span></div>${depthControl}</div>`;
+      };
+      inspector.innerHTML = `<h3>Depth based Parallax &amp; Scale</h3><p class="animation-note">One place for how layers occupy and behave in virtual 3D space. Camera Response controls physical parallax from the shared virtual camera; Depth Size Adjustment is an optional artistic size correction.</p>
         ${basicSection(
-          numberField('depth-scale-near', 'Near scale · foreground %', pct(settings?.near ?? 1), 25, 300, 1)
-          + numberField('depth-scale-far', 'Far scale · background %', pct(settings?.far ?? 1), 25, 300, 1)
-          + numberField('depth-scale-strength', 'Overall strength · %', pct(settings?.strength ?? 1), 0, 200, 1)
-          + `<div class="row-actions"><button class="outline" type="button" id="depth-scale-save">Apply scale settings</button><button type="button" id="depth-scale-reset">Reset to neutral</button></div>`
+          '<div class="parallax-settings-subtitle">Camera response</div>'
+          + rangeField('parallax-strength', 'Global parallax strength', pct(cfg.parallax?.strength ?? 1), 0, 300, 1, '0% cancels camera translation · 100% natural · above 100% exaggerates')
+          + '<p class="animation-note">Depth places a layer in the composition; influence decides how strongly it answers camera translation. Camera rotation, lens and focal length are unchanged.</p>'
+          + '<div class="parallax-settings-subtitle">Layer influence · % and depth</div>'
+          + `<div class="parallax-layer-groups">${groupedLayers(cfg, layerRow)}</div>`
         )}
         ${advancedSection(
-          numberField('depth-scale-reference', 'Reference depth · %', pct(settings?.reference ?? .5), 5, 95, 1, 'layers at this depth stay exactly 100%')
-          + `<div class="parallax-settings-subtitle">Per-layer influence · %</div><div class="parallax-layer-groups">${groupedLayers(cfg, (id, name, depth) =>
-            `<label class="parallax-layer-row"><span class="parallax-layer-row-name">${escape(name)}<small>depth ${pct(depth)}%</small></span><input id="scale-influence-${id}" type="number" min="0" max="200" step="1" value="${pct(influence[id] ?? 1)}" aria-label="Influence for ${escape(name)}"></label>`)}</div>`
-        )}`;
-      $<HTMLButtonElement>('depth-scale-save').onclick = () => {
-        const value = (id: string) => (document.getElementById(id) as HTMLInputElement).valueAsNumber;
-        const near = value('depth-scale-near') / 100, far = value('depth-scale-far') / 100;
-        const reference = value('depth-scale-reference') / 100, strength = value('depth-scale-strength') / 100;
-        if (![near, far, reference, strength].every(Number.isFinite) || near < .25 || far < .25 || strength < 0 || reference < .05 || reference > .95) { options.notify('Check the scale values'); return; }
+          '<div class="parallax-settings-subtitle">Depth size adjustment</div>'
+          + '<p class="animation-note">An optional artistic size correction applied before projection. It does not replace physical perspective from the virtual camera. Use it only when you want to exaggerate or correct the relative size of layers at different depths.</p>'
+          + toggleField('depth-scale-enabled', 'Enable depth size adjustment', sizeEnabled, 'off by default')
+          + `<div id="depth-scale-fields"${sizeEnabled ? '' : ' hidden'}>`
+          + numberField('depth-scale-near', 'Foreground size · %', pct(settings?.near ?? 1), 25, 300, 1)
+          + numberField('depth-scale-far', 'Background size · %', pct(settings?.far ?? 1), 25, 300, 1)
+          + numberField('depth-scale-reference', 'Reference depth · %', pct(settings?.reference ?? .5), 5, 95, 1, 'Layers at this depth stay exactly 100%.')
+          + legacyNote
+          + '</div>'
+          + '<p class="animation-note">This adjustment is independent of Parallax response and camera perspective. Layer scale, position and rotation in Arrange stay unchanged.</p>'
+        )}
+        <div class="row-actions"><button class="outline" type="button" id="parallax-depth-save">Apply settings</button><button type="button" id="parallax-depth-reset">Reset to neutral</button></div>`;
+      const strength = $<HTMLInputElement>('parallax-strength');
+      const strengthValue = $<HTMLInputElement>('parallax-strength-value');
+      strength.oninput = () => { if (Number.isFinite(strength.valueAsNumber)) strengthValue.value = String(strength.valueAsNumber); paintRange(strength); };
+      strengthValue.oninput = () => { if (Number.isFinite(strengthValue.valueAsNumber)) strength.value = String(strengthValue.valueAsNumber); paintRange(strength); };
+      strengthValue.onchange = () => {
+        const value = strengthValue.valueAsNumber;
+        if (!Number.isFinite(value) || value < 0 || value > 300) {
+          options.notify('Parallax strength must be between 0 and 300%');
+          strengthValue.value = strength.value;
+          return;
+        }
+        strength.value = String(value);
+        paintRange(strength);
+      };
+      for (const layer of cfg.layers) {
+        const slider = document.getElementById(`depth-${layer.id}`) as HTMLInputElement | null;
+        if (slider) slider.oninput = () => { paintRange(slider); const out = document.getElementById(`depth-out-${layer.id}`); if (out) out.textContent = `${slider.value}%`; };
+      }
+      const enabled = $<HTMLInputElement>('depth-scale-enabled');
+      enabled.onchange = () => { $('depth-scale-fields').hidden = !enabled.checked; };
+      $<HTMLButtonElement>('parallax-depth-save').onclick = () => {
+        const strengthPercent = strengthValue.valueAsNumber;
+        if (!Number.isFinite(strengthPercent) || strengthPercent < 0 || strengthPercent > 300) { options.notify('Parallax strength must be between 0 and 300%'); return; }
+        // Validate everything before committing anything.
         const influenceNext: Record<string, number> = {};
+        const depthNext: Record<string, number> = {};
         for (const layer of cfg.layers) {
-          const field = document.getElementById(`scale-influence-${layer.id}`) as HTMLInputElement | null;
-          const amount = (field?.valueAsNumber ?? 100) / 100;
-          if (!Number.isFinite(amount) || amount < 0 || amount > 2) { options.notify('Influence must be between 0 and 200%'); return; }
-          if (amount !== 1) influenceNext[layer.id] = amount;
+          const field = document.getElementById(`influence-${layer.id}`) as HTMLInputElement | null;
+          const value = field ? field.valueAsNumber / 100 : 1;
+          if (!Number.isFinite(value) || value < 0 || value > 3) { options.notify('Influence must be between 0 and 300%'); return; }
+          if (value !== 1) influenceNext[layer.id] = value;
+          // Plane-assigned layers display effective depth and never rewrite stored depth.
+          if (planeFor(layer.id)) continue;
+          const depthField = document.getElementById(`depth-${layer.id}`) as HTMLInputElement | null;
+          if (!depthField) continue;
+          const depth = depthField.valueAsNumber / 100;
+          if (!Number.isFinite(depth) || depth < 0 || depth > 1) { options.notify('Layer depth must be between 0 and 100%'); return; }
+          depthNext[layer.id] = depth;
+        }
+        let sizeNext: DepthScaleSettings | undefined;
+        if (enabled.checked) {
+          const read = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.valueAsNumber;
+          const near = read('depth-scale-near'), far = read('depth-scale-far'), reference = read('depth-scale-reference');
+          if (typeof near !== 'number' || !Number.isFinite(near) || near < 25 || near > 300) { options.notify('Foreground size must be between 25 and 300%'); return; }
+          if (typeof far !== 'number' || !Number.isFinite(far) || far < 25 || far > 300) { options.notify('Background size must be between 25 and 300%'); return; }
+          if (typeof reference !== 'number' || !Number.isFinite(reference) || reference < 5 || reference > 95) { options.notify('Reference depth must be between 5 and 95%'); return; }
+          // Hidden compatibility values survive an edit untouched.
+          sizeNext = {
+            near: near / 100, far: far / 100, reference: reference / 100,
+            strength: cfg.depthScale?.strength ?? 1,
+            influence: { ...(cfg.depthScale?.influence ?? {}) },
+          };
         }
         const next = structuredClone(cfg);
-        next.depthScale = { near, far, reference, strength, influence: influenceNext };
+        for (const [id, depth] of Object.entries(depthNext)) {
+          const target = next.layers.find(candidate => candidate.id === id);
+          if (target) target.depth = depth;
+        }
+        next.parallax = { strength: strengthPercent / 100, influence: influenceNext };
+        next.depthScale = sizeNext;
         void save(next);
       };
-      $<HTMLButtonElement>('depth-scale-reset').onclick = () => { const next = structuredClone(cfg); next.depthScale = undefined; void save(next); };
+      $<HTMLButtonElement>('parallax-depth-reset').onclick = () => {
+        if (!confirm('Reset Depth & Perspective to neutral? Layer depth, Depth Planes and other effects are kept.')) return;
+        const next = structuredClone(cfg); next.parallax = undefined; next.depthScale = undefined; void save(next);
+      };
       return;
     }
 

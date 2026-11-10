@@ -19,10 +19,20 @@
 .parallax-empty{color:var(--muted);font-size:11.5px;line-height:1.5;margin:6px 0}
 #parallax-inspector .field{gap:6px;margin-bottom:8px}
 #parallax-inspector input{width:110px}
-#parallax-inspector input[type=range]{width:100%}
+#parallax-inspector input[type=range]{width:100%;accent-color:var(--gold);-webkit-appearance:none;appearance:none;height:16px;margin:0;padding:0;border:0;background:transparent;cursor:pointer}
+/* Chromium and Firefox each paint their own native range widget (different track
+   thickness, thumb size and border), so both are normalised to one thin gold rail. */
+#parallax-inspector input[type=range]::-webkit-slider-runnable-track{height:4px;border:0;border-radius:2px;background:linear-gradient(to right,var(--gold) 0 var(--range-fill,50%),#2c352b var(--range-fill,50%) 100%)}
+#parallax-inspector input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;margin-top:-4px;border:0;border-radius:50%;background:var(--gold);box-shadow:0 0 0 1px #0a0f0a}
+#parallax-inspector input[type=range]::-moz-range-track{height:4px;border:0;border-radius:2px;background:linear-gradient(to right,var(--gold) 0 var(--range-fill,50%),#2c352b var(--range-fill,50%) 100%)}
+#parallax-inspector input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:var(--gold);box-shadow:0 0 0 1px #0a0f0a}
 #parallax-inspector input[type=checkbox]{width:auto}
 #parallax-inspector output{color:var(--gold);font-size:11.5px}
-#parallax-strength-out{margin-left:6px}
+/* A range slider with a compact numeric companion, sharing the standard field layout. */
+#parallax-inspector .parallax-range-field{flex-direction:column;align-items:stretch;gap:4px}
+#parallax-inspector .parallax-range-row{display:flex;align-items:center;gap:6px;min-width:0}
+#parallax-inspector .parallax-range-row input[type=range]{flex:1;min-width:0;width:auto}
+#parallax-inspector .parallax-range-row .number-wrap{width:64px;min-height:20px;flex:none;padding:1px 3px 1px 4px}
 .parallax-corner{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:end;margin-bottom:6px}
 .parallax-corner b{font-size:11.5px;color:var(--muted);align-self:center}
 .parallax-corner .field{margin:0}
@@ -32,7 +42,6 @@
 #parallax-inspector .number-wrap input{width:100%;min-width:0;padding:1px 0;border:0;background:none;text-align:right;appearance:textfield;-moz-appearance:textfield}
 #parallax-inspector .number-wrap input::-webkit-inner-spin-button,#parallax-inspector .number-wrap input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 #parallax-inspector .number-wrap input:focus{outline:none}
-#parallax-inspector .depth-influence .number-wrap{width:72px;min-height:20px;padding:1px 3px 1px 4px}
 #parallax-inspector .parallax-plane .number-wrap{width:86px}
 #parallax-inspector .number-step{color:#9ba496}
 #parallax-inspector select option{background:#111712;color:#e2e6d8}
@@ -41,14 +50,19 @@
 #parallax-inspector input[type=search]::-webkit-search-cancel-button{filter:invert(.7)}
 #parallax-inspector button[data-plane-delete]{justify-self:start;margin-top:4px}
 
-/* Per-layer depth editor inside the Parallax tab. */
-.depth-layer{display:flex;flex-direction:column;gap:4px;margin:9px 0;padding-bottom:7px;border-bottom:1px solid #2b342b}
-.depth-layer:last-child{border-bottom:0;padding-bottom:0}
-.depth-layer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#c1cabc}
-.depth-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.depth-influence{display:flex;align-items:center;gap:5px;flex:none;font-size:10.8px;color:var(--muted)}
-.depth-influence input{width:56px;padding:3px 4px;background:#111712;border:1px solid #3e493b;border-radius:3px;font-size:11px;text-align:right}
-.depth-label{flex:none;font-size:10.8px;color:var(--muted)}
+/* Per-layer depth and influence inside Depth & Perspective. */
+#parallax-inspector .parallax-depth-layer{display:grid;gap:3px;padding:4px 2px 5px 10px;border-bottom:1px solid #232c23}
+#parallax-inspector .parallax-depth-layer:last-child{border-bottom:0;padding-bottom:1px}
+#parallax-inspector .parallax-depth-layer .parallax-layer-row{padding:0;gap:6px}
+#parallax-inspector .parallax-depth-layer .number-wrap{width:64px;min-height:20px;padding:1px 3px 1px 4px;flex:none}
+#parallax-inspector .parallax-depth-row{display:flex;align-items:center;gap:6px;min-width:0}
+#parallax-inspector .parallax-depth-row input[type=range]{flex:1;min-width:0;width:auto;accent-color:var(--gold)}
+#parallax-inspector .parallax-depth-row output{flex:none;min-width:38px;text-align:right;font-family:var(--font-mono);font-size:10.4px;color:var(--gold)}
+.parallax-depth-label{flex:none;font-size:10.2px;letter-spacing:.4px;color:var(--muted)}
+.parallax-depth-inherited{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:10.4px;color:#a9b4a0;overflow-wrap:anywhere}
+.parallax-depth-inherited b{color:#e0dcc9;font-weight:600}
+.parallax-depth-inherited small{color:#7f8c76;font-size:9.4px;line-height:1.3}
+.parallax-compat-note{margin:4px 0 0;font-size:9.6px;line-height:1.35;color:#7f8c76}
 
 /* ---- Four-category catalogue ------------------------------------------------ */
 .parallax-catalogue-intro .panel-heading{margin:12px 0 4px}

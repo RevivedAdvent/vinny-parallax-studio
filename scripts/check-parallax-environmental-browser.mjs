@@ -133,7 +133,7 @@ try {
   await ui.waitForFunction(() => window.cameraStudio.getState().config.layers.length === 2);
   await ui.locator('[data-tab="parallax"]').click();
   await ui.evaluate(() => { const applied = document.getElementById('applied-parallax'); if (applied) applied.open = true; });
-  const categoryOf = { drift: 'motion', framing: 'motion', wind: 'motion', float: 'motion', ambient: 'motion', fade: 'appearance', reveal: 'appearance', shadow: 'appearance', transform: 'deformation', warp: 'deformation', depthScale: 'depth', planes: 'depth' };
+  const categoryOf = { drift: 'motion', framing: 'motion', wind: 'motion', float: 'motion', ambient: 'motion', fade: 'appearance', reveal: 'appearance', shadow: 'appearance', transform: 'deformation', warp: 'deformation', depth: 'depth', planes: 'depth' };
   const openCategory = async id => {
     const details = ui.locator(`.parallax-category[data-category="${id}"]`);
     if (!(await details.evaluate(node => node.open))) await details.locator('summary').click();
@@ -253,20 +253,24 @@ try {
   await ui.locator('[data-effect-delete]').first().click();
   await ui.waitForFunction(() => (window.cameraStudio.getState().config.layerEffects?.length ?? 0) === 0);
 
-  // Folder-aware Depth-based Scale influence hierarchy.
-  await choose('depthScale');
-  assert.equal(await visible('depth-scale-near'), true);
-  assert.equal(await visible('depth-scale-reference'), false, 'reference depth is an advanced setting');
+  // Optional Depth Size Adjustment lives in the combined Advanced settings.
+  await choose('depth');
+  assert.equal(await visible('depth-scale-near'), false, 'size adjustment is collapsed until Advanced is opened');
   await openAdvanced();
-  assert.equal(await ui.locator('[id^=scale-influence]').count(), 2, 'every layer has its own influence');
+  assert.equal(await visible('depth-scale-near'), false, 'size fields stay hidden until the option is enabled');
+  await ui.locator('#depth-scale-enabled').check();
+  assert.equal(await visible('depth-scale-near'), true);
+  assert.equal(await visible('depth-scale-reference'), true, 'reference depth sits with the other size fields');
+  assert.equal(await ui.locator('[id^=scale-influence]').count(), 0, 'the old per-layer size influence list is gone');
   await ui.locator('#depth-scale-near').fill('135');
   await ui.locator('#depth-scale-far').fill('80');
-  await ui.locator('[id^=scale-influence]').first().fill('50');
-  await ui.locator('#depth-scale-save').click();
+  await ui.locator('#parallax-depth-save').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.depthScale?.near === 1.35);
   const depthScale = (await currentConfig()).depthScale;
   assert.equal(depthScale.far, .8);
-  assert.equal(Object.values(depthScale.influence).filter(value => value !== 1).length, 1, 'each influence value is independently editable');
+  assert.equal(depthScale.reference, .5, 'reference depth keeps its default');
+  assert.equal(depthScale.strength, 1, 'hidden compatibility strength is preserved at neutral');
+  assert.deepEqual(depthScale.influence, {}, 'no per-layer size overrides are created');
   // Group the existing layers under a folder and confirm the hierarchy follows.
   await ui.locator('[data-tab="arrange"]').click();
   await ui.locator('#add-folder').click();
@@ -278,10 +282,12 @@ try {
     await ui.waitForTimeout(200);
   }
   await ui.locator('[data-tab="parallax"]').click();
-  await ui.locator('[data-parallax="depthScale"]').click();
-  await openAdvanced();
+  await ui.locator('[data-parallax="depth"]').click();
   assert.equal(await ui.locator('.parallax-layer-group-head').count(), 1, 'influence rows are grouped under their folder');
-  assert.equal(await ui.locator('[id^=scale-influence]').count(), 2, 'every member keeps an independent influence field');
+  assert.equal(await ui.locator('[id^=influence-]').count(), 2, 'every member keeps an independent parallax influence field');
+  await openAdvanced();
+  assert.equal(await ui.locator('#depth-scale-enabled').isChecked(), true, 'an existing size adjustment loads as enabled');
+  assert.equal(await ui.locator('#depth-scale-near').inputValue(), '135', 'stored size values reload');
 
   // Multi-plane Camera: folder bulk assignment expands into explicit layer ids.
   const originalDepths = (await currentConfig()).layers.map(layer => layer.depth);

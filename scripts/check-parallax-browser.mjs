@@ -120,7 +120,7 @@ try {
   await render(2); const composed = await state();
   assert.ok(composed.state.virtualCamera.x > 0 && composed.spriteAlpha.l3 < .3, 'camera and layer effects compose');
   assert.deepEqual(errors, []);
-  // ---- UI: categories, Basic/Advanced, folder-aware selection, frozen depth --
+  // ---- UI: categories, Basic/Advanced, folder-aware selection, Depth based Parallax & Scale --
   const ui = await runtime.browser.newPage({ viewport: { width: 1400, height: 900 } });
   ui.on('pageerror', e => errors.push(e.message));
   ui.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -157,7 +157,7 @@ try {
   await ui.waitForTimeout(120);
 
   const categoryOf = {
-    depth: 'depth', depthScale: 'depth', planes: 'depth',
+    depth: 'depth', planes: 'depth',
     drift: 'motion', framing: 'motion', wind: 'motion', float: 'motion', ambient: 'motion',
     fade: 'appearance', reveal: 'appearance', shadow: 'appearance',
     transform: 'deformation', warp: 'deformation',
@@ -170,10 +170,10 @@ try {
 
   // Four categories with every existing effect in place.
   assert.deepEqual(await ui.locator('.parallax-category-name').allInnerTexts(), ['Depth & Perspective', 'Layer Motion', 'Layer Appearance', 'Advanced Deformation']);
-  assert.deepEqual((await ui.locator('.parallax-category-count').allInnerTexts()).map(Number), [3, 5, 3, 2]);
-  assert.equal(await ui.locator('#parallax-categories [data-parallax]').count(), 13, 'no existing effect is removed');
+  assert.deepEqual((await ui.locator('.parallax-category-count').allInnerTexts()).map(Number), [2, 5, 3, 2]);
+  assert.equal(await ui.locator('#parallax-categories [data-parallax]').count(), 12, 'no unrelated effect is removed');
   const expectedByCategory = {
-    depth: ['depth', 'depthScale', 'planes'],
+    depth: ['depth', 'planes'],
     motion: ['drift', 'framing', 'wind', 'float', 'ambient'],
     appearance: ['fade', 'reveal', 'shadow'],
     deformation: ['transform', 'warp'],
@@ -305,21 +305,140 @@ try {
   await framedRow.locator('[data-effect-edit]').click();
   assert.equal(await ui.locator('input[name=parallax-layer]:checked').count(), 2, 'editing restores the stored target ids');
 
-  // Frozen Depth-based Parallax keeps its exact controls and behaviour.
+  // Depth based Parallax & Scale: one camera-response editor with an optional size adjustment.
   await choose('depth');
+  assert.match(await ui.locator('#parallax-inspector').innerText(), /Depth based Parallax & Scale/i);
+  assert.equal(await ui.locator('[data-settings=basic]').isVisible(), true, 'camera response is immediately visible');
+  assert.match(await ui.locator('#parallax-inspector').innerText(), /Camera response/i);
+  assert.equal(await ui.locator('.parallax-advanced').count(), 1, 'one advanced section');
+  assert.equal(await ui.locator('.parallax-advanced').evaluate(node => node.open), false, 'size adjustment starts collapsed');
   assert.equal(await ui.locator('#parallax-strength').getAttribute('min'), '0');
   assert.equal(await ui.locator('#parallax-strength').getAttribute('max'), '300');
+  assert.equal(await ui.locator('#parallax-strength').inputValue(), '100', 'global strength defaults to 100%');
+  assert.equal(await ui.locator('#parallax-strength-value').inputValue(), '100', 'the strength slider has a numeric companion');
+  assert.equal(await ui.locator('.number-wrap:has(#parallax-strength-value) .number-step').count(), 2, 'the numeric strength uses the shared stepper');
+  await ui.locator('.number-wrap:has(#parallax-strength-value) [data-step=up]').click();
+  assert.equal(await ui.locator('#parallax-strength').inputValue(), '101', 'the stepper moves the slider');
+  assert.equal(await ui.locator('#parallax-strength-value').inputValue(), '101');
+  await ui.locator('.number-wrap:has(#parallax-strength-value) [data-step=down]').click();
+  assert.equal(await ui.locator('#parallax-strength-value').inputValue(), '100');
+  await ui.locator('#parallax-strength').fill('220');
+  assert.equal(await ui.locator('#parallax-strength-value').inputValue(), '220', 'moving the slider updates the number');
+  // Both engines paint the same thin gold rail instead of their native widgets.
+  assert.equal(await ui.locator('#parallax-strength').evaluate(node => getComputedStyle(node).appearance), 'none', 'the range uses the shared normalised styling');
+  await ui.locator('#parallax-strength-value').fill('63');
+  assert.equal(await ui.locator('#parallax-strength').evaluate(node => node.style.getPropertyValue('--range-fill')), '21%', 'the gold fill follows the value');
   assert.equal(await ui.locator('[id^=influence-]').first().getAttribute('max'), '300');
-  assert.equal(await ui.locator('[id^=depth-]').first().getAttribute('min'), '0');
-  assert.equal(await ui.locator('[id^=depth-]').first().getAttribute('max'), '100');
-  assert.equal(await ui.locator('.number-wrap:has([id^=influence-]) .number-step').count(), 4, 'each depth influence row uses the same stepper control');
-  assert.match(await ui.locator('#parallax-inspector').innerText(), /Layer depth and influence/);
-  await ui.locator('#parallax-strength').fill('150');
+  assert.equal(await ui.locator('[id^=influence-]').first().inputValue(), '100', 'layer influence defaults to 100%');
+  assert.equal(await ui.locator('.number-wrap:has([id^=influence-]) .number-step').count(), 4, 'each influence row uses the shared stepper control');
+  assert.equal(await ui.locator('.parallax-depth-row input[type=range]').first().getAttribute('min'), '0');
+  assert.equal(await ui.locator('.parallax-depth-row input[type=range]').first().getAttribute('max'), '100');
+  assert.equal(await ui.locator('.parallax-layer-group').count(), 1, 'layer rows reuse the Arrange folder grouping');
+  assert.equal(await ui.locator('#parallax-depth-save').count(), 1, 'exactly one apply action');
+  assert.equal(await ui.locator('#parallax-depth-reset').count(), 1, 'exactly one reset action');
+  assert.equal(await ui.locator('#depth-scale-save, #depth-scale-reset, [id^=scale-influence]').count(), 0, 'no second scale editor');
+
+  // The optional size adjustment is off by default and initialises neutral values.
+  await ui.locator('.parallax-advanced summary').click();
+  assert.equal(await ui.locator('#depth-scale-enabled').isChecked(), false, 'size adjustment is off by default');
+  assert.equal(await ui.locator('#depth-scale-near').isVisible(), false, 'size fields stay hidden while disabled');
+  await ui.locator('#depth-scale-enabled').check();
+  assert.equal(await ui.locator('#depth-scale-near').isVisible(), true);
+  assert.equal(await ui.locator('#depth-scale-near').inputValue(), '100');
+  assert.equal(await ui.locator('#depth-scale-far').inputValue(), '100');
+  assert.equal(await ui.locator('#depth-scale-reference').inputValue(), '50');
+  await ui.locator('#depth-scale-near').fill('135');
+  await ui.locator('#depth-scale-far').fill('80');
+
+  // One apply saves camera response and size adjustment together.
+  const beforeDepths = (await currentConfig()).layers.map(layer => layer.depth);
+  await ui.locator('#parallax-strength-value').fill('150');
+  assert.equal(await ui.locator('#parallax-strength').inputValue(), '150', 'typing a number moves the slider');
+  await ui.locator('[id^=influence-]').first().fill('50');
   await ui.locator('#parallax-depth-save').click();
-  await ui.waitForFunction(() => window.cameraStudio.getState().config.parallax?.strength === 1.5);
-  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Depth-based parallax/);
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthScale?.near === 1.35);
+  const combined = await currentConfig();
+  assert.equal(combined.parallax.strength, 1.5, 'apply saves global strength');
+  assert.equal(combined.depthScale.far, .8, 'apply saves the background size');
+  assert.equal(combined.depthScale.strength, 1, 'hidden compatibility strength is initialised');
+  assert.deepEqual(combined.depthScale.influence, {}, 'hidden compatibility influence is initialised empty');
+  assert.equal(Object.values(combined.parallax.influence).filter(value => value !== 1).length, 1, 'per-layer influence stays independent');
+  assert.equal(await ui.locator('#parallax-effects-list .parallax-item', { hasText: 'Depth based Parallax' }).count(), 1, 'one combined applied row');
+  assert.doesNotMatch(await ui.locator('#parallax-effects-list').innerText(), /Depth-based Scale/);
+  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Size adjustment on/);
+
+  await choose('depth');
+  await ui.locator('.parallax-depth-row input[type=range]').first().fill('30');
+  await ui.locator('#parallax-depth-save').click();
+  await ui.waitForTimeout(200);
+  const afterDepths = (await currentConfig()).layers.map(layer => layer.depth);
+  assert.equal(afterDepths.filter((depth, index) => depth !== beforeDepths[index]).length, 1, 'only the edited layer changes depth');
+  assert.ok(afterDepths.includes(.3), 'unassigned stored depth is editable');
+
+  // Plane-assigned layers show effective depth and never rewrite stored depth.
+  await choose('planes');
+  await ui.locator('#plane-add').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthPlanes?.length === 1);
+  await ui.locator('#plane-name-0').fill('Midground');
+  await ui.locator('#plane-depth-0').fill('67');
+  await ui.locator('[id^=layer-plane]').first().selectOption({ index: 1 });
+  await ui.locator('#plane-save').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthPlanes?.[0]?.layerIds.length === 1);
+  const assignedId = (await currentConfig()).depthPlanes[0].layerIds[0];
+  const assignedStored = (await currentConfig()).layers.find(layer => layer.id === assignedId).depth;
+  await choose('depth');
+  assert.match(await ui.locator('#parallax-inspector').innerText(), /Inherited from Midground · 67%/);
+  assert.equal(await ui.locator(`#depth-${assignedId}`).count(), 0, 'plane depth is not editable here');
+  await ui.locator('#parallax-depth-save').click();
+  await ui.waitForTimeout(200);
+  const preserved = await currentConfig();
+  assert.deepEqual(preserved.depthPlanes[0].layerIds, [assignedId], 'plane membership is untouched');
+  assert.equal(preserved.depthPlanes[0].depth, .67, 'plane depth is untouched');
+  assert.equal(preserved.layers.find(layer => layer.id === assignedId).depth, assignedStored, 'stored depth of an assigned layer is never rewritten');
+
+  // Reset clears camera response and size adjustment only.
   await ui.locator('#parallax-depth-reset').click();
   await ui.waitForFunction(() => window.cameraStudio.getState().config.parallax === undefined);
+  const reset = await currentConfig();
+  assert.equal(reset.depthScale, undefined, 'reset clears the size adjustment');
+  assert.equal(reset.depthPlanes[0].depth, .67, 'reset keeps depth planes');
+  assert.deepEqual(reset.layers.map(layer => layer.depth), preserved.layers.map(layer => layer.depth), 'reset keeps stored layer depth');
+  assert.equal(await ui.locator('#parallax-effects-list .parallax-item', { hasText: 'Depth based Parallax' }).count(), 0, 'the combined row disappears at neutral');
+  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Depth Planes/, 'Depth Planes keeps its own applied row');
+
+  // Legacy hidden compatibility values survive an edit of the combined feature.
+  const now = new Date().toISOString();
+  const legacyProject = {
+    schemaVersion: 1, id: 'legacy-depth-scale', title: 'Legacy depth scale', createdAt: now, updatedAt: now,
+    settings: { width: 1363, height: 768, fps: 24 },
+    scenes: [{
+      version: 1, id: 'legacy-scene', title: 'Legacy', width: 1363, height: 768, fps: 24, totalFrames: 240,
+      camera: { baseZoom: 1, anchor: { x: 681.5, y: 384 }, limits: { x: { min: -1363, max: 1363 }, y: { min: -768, max: 768 }, zoom: { min: .25, max: 4 }, roll: { min: -30, max: 30 } } },
+      layers: [
+        { id: 'legacy-back', name: 'Legacy background', asset: '/test-images/01-background.png', depth: .2, order: 0 },
+        { id: 'legacy-front', name: 'Legacy foreground', asset: '/test-images/04-layer%203.png', depth: .8, order: 1 },
+      ],
+      tracks: [],
+      depthScale: { near: 1.3, far: .8, reference: .4, strength: .7, influence: { 'legacy-front': .5 } },
+    }],
+  };
+  await ui.locator('#project-file').setInputFiles({ name: 'legacy.story.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacyProject)) });
+  await ui.waitForFunction(() => { try { return window.cameraStudio?.getState?.().config?.id === 'legacy-scene'; } catch { return false; } });
+  await ui.locator('[data-tab="parallax"]').click();
+  await choose('depth');
+  assert.match(await ui.locator('#parallax-effects-list').innerText(), /Depth based Parallax & Scale/, 'legacy size settings appear in the combined row');
+  await ui.locator('.parallax-advanced summary').click();
+  assert.equal(await ui.locator('#depth-scale-enabled').isChecked(), true, 'an existing depthScale loads as enabled');
+  assert.equal(await ui.locator('#depth-scale-near').inputValue(), '130');
+  assert.equal(await ui.locator('#depth-scale-reference').inputValue(), '40');
+  assert.match(await ui.locator('#parallax-inspector').innerText(), /preserved/, 'legacy overrides are flagged as preserved');
+  await ui.locator('#depth-scale-near').fill('140');
+  await ui.locator('#parallax-depth-save').click();
+  await ui.waitForFunction(() => window.cameraStudio.getState().config.depthScale?.near === 1.4);
+  const legacyScale = (await currentConfig()).depthScale;
+  assert.equal(legacyScale.strength, .7, 'hidden legacy strength is preserved on save');
+  assert.equal(legacyScale.influence['legacy-front'], .5, 'hidden legacy per-layer size overrides are preserved on save');
+  assert.equal(legacyScale.reference, .4);
 
   // Playback still drives the untouched preview.
   await ui.locator('#play').click();
@@ -328,5 +447,5 @@ try {
   await ui.locator('[data-tab="effects"]').click();
   await ui.locator('[data-tab="parallax"]').click();
   assert.deepEqual(errors, []);
-  console.log('Parallax browser checks passed: preview pixels and masks, depth travel, deterministic seeking, four categories, Basic/Advanced, folder-aware targets, frozen depth controls and preview geometry.');
+  console.log('Parallax browser checks passed: preview pixels and masks, depth travel, deterministic seeking, four categories, Basic/Advanced, folder-aware targets, unified Depth based Parallax & Scale with optional size adjustment, effective plane depth and preview geometry.');
 } finally { await runtime.close(); }
